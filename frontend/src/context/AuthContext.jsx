@@ -8,13 +8,14 @@ export const useAuth = () => useContext(AuthContext);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(undefined); // undefined=loading, null=guest, obj=profile
 
-  const loadProfile = async () => {
+  const loadProfile = async ({ throwOnError = false } = {}) => {
     try {
       const { data } = await api.get("/auth/me");
       setUser(data);
       return data;
-    } catch {
+    } catch (e) {
       setUser(null);
+      if (throwOnError) throw e;
       return null;
     }
   };
@@ -44,10 +45,20 @@ export function AuthProvider({ children }) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { ok: false, error: error.message };
     try {
-      const profile = await loadProfile();
-      if (!profile) return { ok: false, error: "Signed in, but no profile was found for this account." };
+      const profile = await loadProfile({ throwOnError: true });
       return { ok: true, user: profile };
     } catch (e) {
+      // Distinguish "request never got a response" (network/CORS/backend
+      // down) from "backend responded with an error" so the message
+      // actually points at the right place instead of always saying
+      // "Something went wrong".
+      if (!e.response) {
+        // eslint-disable-next-line no-console
+        console.error("auth/me network error (no response received):", e);
+        return { ok: false, error: `Could not reach the API at ${e.config?.baseURL || ""}. Is the backend running and REACT_APP_BACKEND_URL correct?` };
+      }
+      // eslint-disable-next-line no-console
+      console.error("auth/me failed:", e.response.status, e.response.data);
       return { ok: false, error: formatApiError(e.response?.data?.detail) };
     }
   };

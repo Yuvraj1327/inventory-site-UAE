@@ -17,7 +17,11 @@ class Settings:
     OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")  # optional, for later AI phases
 
     def is_supabase_configured(self) -> bool:
-        return bool(self.SUPABASE_URL and self.SUPABASE_SERVICE_ROLE_KEY and self.SUPABASE_JWT_SECRET)
+        # SUPABASE_JWT_SECRET is optional now — token verification calls
+        # Supabase's own auth server (see app/core/security.py) rather than
+        # decoding locally, so it works regardless of HS256 vs RS256/ECC
+        # signing keys. Kept in settings for any future local-decode fast path.
+        return bool(self.SUPABASE_URL and self.SUPABASE_ANON_KEY and self.SUPABASE_SERVICE_ROLE_KEY)
 
 
 settings = Settings()

@@ -20,7 +20,11 @@ api.interceptors.request.use(async (config) => {
 api.interceptors.response.use(
   (r) => r,
   async (err) => {
-    if (err.response?.status === 401) {
+    // Skip the auto-redirect for /auth/me: AuthContext calls it right
+    // after sign-in and needs to handle a 401 itself (and show *why*),
+    // rather than being pre-empted by a hard redirect here.
+    const isMe = err.config?.url?.includes("/auth/me");
+    if (err.response?.status === 401 && !isMe) {
       await supabase.auth.signOut();
       if (!window.location.pathname.startsWith("/login")) window.location.href = "/login";
     }
