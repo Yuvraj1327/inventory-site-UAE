@@ -1,0 +1,1248 @@
+from fastapi import FastAPI, APIRouter, HTTPException, UploadFile, File, Form, Depends, Header, Request
+from fastapi.responses import StreamingResponse, Response
+from dotenv import load_dotenv
+from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+import os
+import io
+import csv
+import re
+import json
+import base64
+import logging
+import bcrypt
+import jwt as pyjwt
+from pathlib import Path
+from pydantic import BaseModel, Field
+from typing import List, Optional, Annotated, Any
+from bson import ObjectId
+from pymongo import ReturnDocument
+from pydantic import BeforeValidator
+import uuid
+from datetime import datetime, timezone, timedelta
+from openpyxl import load_workbook
+
+# `emergentintegrations` is a proprietary package only available inside the
+# Emergent hosting platform (its wheel/index is not reachable from a normal
+# dev machine or CI). We import it defensively so the rest of the API keeps
+# working when it isn't installed; AI-powered endpoints degrade to a 503
+# instead of crashing the whole app at import time. See Phase 1 report.
+try:
+    from emergentintegrations.llm.chat import (
+        LlmChat, UserMessage, ImageContent, TextDelta, StreamDone,
+    )
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
+    LlmChat = UserMessage = ImageContent = TextDelta = StreamDone = None
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
+mongo_url = os.environ['MONGO_URL']
+client = AsyncIOMotorClient(mongo_url)
+db = client[os.environ['DB_NAME']]
+
+EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
+MODEL = "gpt-5.4"
+JWT_SECRET = os.environ.get('JWT_SECRET', 'dev-secret')
+JWT_ALGO = "HS256"
+
+app = FastAPI()
+api_router = APIRouter(prefix="/api")           # public (auth)
+
+
+# ---------------- Auth helpers ----------------
+def hash_password(p: str) -> str:
+    return bcrypt.hashpw(p.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(p: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(p.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def create_token(user: dict) -> str:
+    payload = {
+        "sub": str(user["_id"]),
+        "email": user["email"],
+        "role": user.get("role", "customer"),
+        "exp": datetime.now(timezone.utc) + timedelta(days=7),
+    }
+    return pyjwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
+
+
+async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    token = authorization[7:]
+    try:
+        payload = pyjwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Session expired")
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    user["_id"] = str(user["_id"])
+    user.pop("password_hash", None)
+    return user
+
+
+async def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+async def require_customer(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") != "customer":
+        raise HTTPException(status_code=403, detail="Customer access required")
+    return user
+
+
+admin_router = APIRouter(prefix="/api", dependencies=[Depends(require_admin)])
+portal_router = APIRouter(prefix="/api/portal", dependencies=[Depends(require_customer)])
+
+PyObjectId = Annotated[str, BeforeValidator(str)]
+
+
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ---------------- Models ----------------
+class Transaction(BaseModel):
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    type: str  # income | expense
+    kind: str = "expense"  # payment_in | payment_out | cash_expense | income | expense
+    amount: float
+    category: str = "Uncategorized"
+    description: str = ""
+    party: str = ""  # customer or supplier name
+    account_no: str = ""
+    receipt_no: str = ""
+    date: str = Field(default_factory=now_iso)
+    created_at: str = Field(default_factory=now_iso)
+
+    class Config:
+        populate_by_name = True
+
+
+class TransactionCreate(BaseModel):
+    type: Optional[str] = None
+    kind: str = "cash_expense"  # payment_in | payment_out | cash_expense
+    amount: float
+    category: str = "Uncategorized"
+    description: str = ""
+    party: str = ""
+    account_no: str = ""
+    date: Optional[str] = None
+
+
+class Order(BaseModel):
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    order_number: str
+    customer: str = ""
+    supplier: str = ""
+    lpo_ref: str = ""
+    pricing_status: str = ""
+    pi_status: str = ""
+    purchasing_value: float = 0.0
+    vat_amount: float = 0.0
+    selling_value: float = 0.0
+    selling_vat: float = 0.0
+    discount_additional_cost: float = 0.0
+    supplier_pkl: str = ""
+    customer_pkl: str = ""
+    delivery_status: str = ""
+    delivery_note: str = ""
+    payment_received_status: str = "No"
+    payment_paid_status: str = "No"
+    sale_amount: float = 0.0
+    received_amount: float = 0.0
+    supplier_cost: float = 0.0
+    paid_to_supplier: float = 0.0
+    status: str = "open"
+    order_date: str = Field(default_factory=now_iso)
+    notes: str = ""
+    created_at: str = Field(default_factory=now_iso)
+
+    class Config:
+        populate_by_name = True
+
+
+class OrderCreate(BaseModel):
+    order_number: str
+    customer: str = ""
+    supplier: str = ""
+    lpo_ref: str = ""
+    pricing_status: str = ""
+    pi_status: str = ""
+    purchasing_value: float = 0.0
+    vat_amount: float = 0.0
+    selling_value: float = 0.0
+    selling_vat: float = 0.0
+    discount_additional_cost: float = 0.0
+    supplier_pkl: str = ""
+    customer_pkl: str = ""
+    delivery_status: str = ""
+    delivery_note: str = ""
+    payment_received_status: str = "No"
+    payment_paid_status: str = "No"
+    sale_amount: float = 0.0
+    received_amount: float = 0.0
+    supplier_cost: float = 0.0
+    paid_to_supplier: float = 0.0
+    status: str = "open"
+    order_date: Optional[str] = None
+    notes: str = ""
+
+
+class Party(BaseModel):
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    name: str
+    kind: str  # customer | supplier
+    email: str = ""
+    phone: str = ""
+    account_no: str = ""
+    country: str = ""
+    city: str = ""
+    company: str = ""
+    lpo: str = ""
+    brand_focus: str = ""
+    office_address: str = ""
+    mobile: str = ""
+    whatsapp: str = ""
+    special_note: str = ""
+    created_at: str = Field(default_factory=now_iso)
+
+    class Config:
+        populate_by_name = True
+
+
+class PartyCreate(BaseModel):
+    name: str
+    kind: str
+    email: str = ""
+    phone: str = ""
+    country: str = ""
+    city: str = ""
+    company: str = ""
+    brand_focus: str = ""
+    office_address: str = ""
+    mobile: str = ""
+    whatsapp: str = ""
+    special_note: str = ""
+
+
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
+
+
+def clean(doc):
+    if doc and "_id" in doc:
+        doc["_id"] = str(doc["_id"])
+    return doc
+
+
+# ---------------- Transactions ----------------
+@admin_router.get("/transactions")
+async def list_transactions():
+    docs = await db.transactions.find().sort("date", -1).to_list(1000)
+    return [clean(d) for d in docs]
+
+
+@admin_router.post("/transactions")
+async def create_transaction(payload: TransactionCreate):
+    data = payload.model_dump()
+    if not data.get("date"):
+        data["date"] = now_iso()
+    kind = data.get("kind") or "cash_expense"
+    if kind == "payment_in":
+        data["type"] = "income"
+        if not data.get("category") or data["category"] == "Uncategorized":
+            data["category"] = "Payment from Customer"
+        doc = await db.counters.find_one_and_update(
+            {"_id": "receipt"}, {"$inc": {"seq": 1}}, upsert=True, return_document=ReturnDocument.AFTER)
+        data["receipt_no"] = f"RCPT{doc['seq']:05d}"
+    elif kind == "payment_out":
+        data["type"] = "expense"
+        if not data.get("category") or data["category"] == "Uncategorized":
+            data["category"] = "Payment to Supplier"
+    elif kind == "cash_expense":
+        data["type"] = "expense"
+    else:
+        data["type"] = data.get("type") or "expense"
+    data["created_at"] = now_iso()
+    res = await db.transactions.insert_one(data)
+    doc = await db.transactions.find_one({"_id": res.inserted_id})
+    return clean(doc)
+
+
+@admin_router.put("/transactions/{tid}")
+async def update_transaction(tid: str, payload: TransactionCreate):
+    data = {k: v for k, v in payload.model_dump().items() if v is not None}
+    await db.transactions.update_one({"_id": ObjectId(tid)}, {"$set": data})
+    doc = await db.transactions.find_one({"_id": ObjectId(tid)})
+    return clean(doc)
+
+
+@admin_router.delete("/transactions/{tid}")
+async def delete_transaction(tid: str):
+    await db.transactions.delete_one({"_id": ObjectId(tid)})
+    return {"ok": True}
+
+
+@admin_router.post("/transactions/categorize")
+async def categorize_transaction(payload: dict):
+    if not AI_AVAILABLE:
+        raise HTTPException(status_code=503, detail="AI categorization is unavailable in this environment (emergentintegrations not installed).")
+    desc = payload.get("description", "")
+    ttype = payload.get("type", "expense")
+    categories = [
+        "Sales Revenue", "Service Income", "Office Supplies", "Rent", "Utilities",
+        "Salaries & Wages", "Marketing", "Travel", "Meals & Entertainment",
+        "Software & Subscriptions", "Inventory / COGS", "Professional Fees",
+        "Taxes", "Bank Charges", "Insurance", "Other",
+    ]
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"cat-{uuid.uuid4()}",
+        system_message=(
+            "You are an accounting assistant. Given a transaction description, return ONLY "
+            "the single best matching category from this list, nothing else: "
+            + ", ".join(categories)
+        ),
+    ).with_model("openai", MODEL)
+    resp = await chat.send_message(UserMessage(text=f"Type: {ttype}. Description: {desc}"))
+    category = resp.strip().strip('"').strip(".")
+    if category not in categories:
+        for c in categories:
+            if c.lower() in category.lower():
+                category = c
+                break
+        else:
+            category = "Other"
+    return {"category": category}
+
+
+# ---------------- Orders ----------------
+@admin_router.get("/orders")
+async def list_orders():
+    docs = await db.orders.find().sort("order_date", -1).to_list(1000)
+    return [clean(d) for d in docs]
+
+
+def derive_order_totals(data):
+    sv, svat = data.get("selling_value") or 0, data.get("selling_vat") or 0
+    if sv or svat:
+        data["sale_amount"] = sv + svat
+    pv, pvat = data.get("purchasing_value") or 0, data.get("vat_amount") or 0
+    if pv or pvat:
+        data["supplier_cost"] = pv + pvat
+    return data
+
+
+@admin_router.post("/orders")
+async def create_order(payload: OrderCreate):
+    data = payload.model_dump()
+    if not data.get("order_date"):
+        data["order_date"] = now_iso()
+    data = derive_order_totals(data)
+    data["created_at"] = now_iso()
+    res = await db.orders.insert_one(data)
+    doc = await db.orders.find_one({"_id": res.inserted_id})
+    return clean(doc)
+
+
+@admin_router.put("/orders/{oid}")
+async def update_order(oid: str, payload: OrderCreate):
+    data = derive_order_totals(payload.model_dump())
+    await db.orders.update_one({"_id": ObjectId(oid)}, {"$set": data})
+    doc = await db.orders.find_one({"_id": ObjectId(oid)})
+    return clean(doc)
+
+
+@admin_router.delete("/orders/{oid}")
+async def delete_order(oid: str):
+    await db.orders.delete_one({"_id": ObjectId(oid)})
+    return {"ok": True}
+
+
+# ---------------- Parties ----------------
+@admin_router.get("/parties")
+async def list_parties(kind: Optional[str] = None):
+    q = {"kind": kind} if kind else {}
+    docs = await db.parties.find(q).sort("name", 1).to_list(1000)
+    return [clean(d) for d in docs]
+
+
+async def next_account_no():
+    doc = await db.counters.find_one_and_update(
+        {"_id": "customer_account"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return f"AC{doc['seq']:05d}"
+
+
+def make_lpo(name: str, phone: str) -> str:
+    words = [w for w in re.split(r"\s+", (name or "").strip()) if w]
+    if len(words) >= 2:
+        abbr = "".join(w[0] for w in words[:4]).upper()
+    else:
+        abbr = (name or "").strip()[:3].upper()
+    digits = re.sub(r"\D", "", phone or "")
+    last2 = digits[-2:] if len(digits) >= 2 else digits
+    return f"{abbr}{last2}"
+
+
+@admin_router.post("/parties")
+async def create_party(payload: PartyCreate):
+    data = payload.model_dump()
+    data["created_at"] = now_iso()
+    if data.get("kind") == "customer":
+        data["account_no"] = await next_account_no()
+        data["lpo"] = make_lpo(data.get("name", ""), data.get("mobile") or data.get("phone") or "")
+    res = await db.parties.insert_one(data)
+    doc = await db.parties.find_one({"_id": res.inserted_id})
+    return clean(doc)
+
+
+@admin_router.delete("/parties/{pid}")
+async def delete_party(pid: str):
+    await db.parties.delete_one({"_id": ObjectId(pid)})
+    return {"ok": True}
+
+
+# ---------------- Statement of Account ----------------
+@admin_router.get("/soa/{kind}/{name}")
+async def statement_of_account(kind: str, name: str):
+    field = "customer" if kind == "customer" else "supplier"
+    rows = []
+
+    orders = await db.orders.find({field: name}).to_list(1000)
+    for o in orders:
+        if kind == "customer":
+            billed, paid = o.get("sale_amount", 0.0), o.get("received_amount", 0.0)
+        else:
+            billed, paid = o.get("supplier_cost", 0.0), o.get("paid_to_supplier", 0.0)
+        rows.append({"ref": o.get("order_number", ""), "order_number": o.get("order_number", ""),
+                     "type": "Order", "date": o.get("order_date", ""), "billed": billed, "paid": paid,
+                     "balance": 0, "status": o.get("status", "")})
+
+    if kind == "customer":
+        invoices = await db.invoices.find({"customer": name}).to_list(1000)
+        for inv in invoices:
+            total = inv.get("total", 0) or 0
+            rows.append({"ref": inv.get("invoice_number", ""), "order_number": inv.get("invoice_number", ""),
+                         "type": "Invoice", "date": inv.get("date", ""), "billed": total,
+                         "paid": total if inv.get("status") == "paid" else 0, "balance": 0,
+                         "status": inv.get("status", "")})
+
+    pay_kind = "payment_in" if kind == "customer" else "payment_out"
+    payments = await db.transactions.find({"party": name, "kind": pay_kind}).to_list(1000)
+    for p in payments:
+        rows.append({"ref": p.get("receipt_no") or "Payment", "order_number": p.get("receipt_no") or "Payment",
+                     "type": "Payment", "date": p.get("date", ""), "billed": 0, "paid": p.get("amount", 0),
+                     "balance": 0, "status": "paid"})
+
+    rows.sort(key=lambda r: r.get("date") or "")
+    running = 0.0
+    total_billed = 0.0
+    total_paid = 0.0
+    for r in rows:
+        total_billed += r["billed"]
+        total_paid += r["paid"]
+        running += (r["billed"] - r["paid"])
+        r["balance"] = round(running, 2)
+    return {
+        "name": name, "kind": kind, "rows": rows,
+        "total_billed": round(total_billed, 2), "total_paid": round(total_paid, 2),
+        "balance": round(total_billed - total_paid, 2),
+    }
+
+
+# ---------------- Dashboard ----------------
+@admin_router.get("/dashboard")
+async def dashboard():
+    txns = await db.transactions.find().to_list(5000)
+    orders = await db.orders.find().to_list(5000)
+
+    total_income = sum(t["amount"] for t in txns if t["type"] == "income")
+    total_expense = sum(t["amount"] for t in txns if t["type"] == "expense")
+
+    # category breakdown for expenses
+    cats = {}
+    for t in txns:
+        if t["type"] == "expense":
+            cats[t.get("category", "Other")] = cats.get(t.get("category", "Other"), 0) + t["amount"]
+    category_breakdown = [{"name": k, "value": round(v, 2)} for k, v in sorted(cats.items(), key=lambda x: -x[1])]
+
+    # monthly trend
+    monthly = {}
+    for t in txns:
+        month = (t.get("date") or "")[:7]
+        if not month:
+            continue
+        monthly.setdefault(month, {"month": month, "income": 0, "expense": 0})
+        monthly[month][t["type"]] += t["amount"]
+    monthly_trend = sorted(monthly.values(), key=lambda x: x["month"])[-6:]
+
+    order_revenue = sum(o.get("sale_amount", 0) for o in orders)
+    order_cost = sum(o.get("supplier_cost", 0) for o in orders)
+    order_profit = order_revenue - order_cost
+    receivables = sum(o.get("sale_amount", 0) - o.get("received_amount", 0) for o in orders)
+    payables = sum(o.get("supplier_cost", 0) - o.get("paid_to_supplier", 0) for o in orders)
+
+    return {
+        "total_income": round(total_income, 2),
+        "total_expense": round(total_expense, 2),
+        "net_profit": round(total_income - total_expense, 2),
+        "transaction_count": len(txns),
+        "order_count": len(orders),
+        "order_revenue": round(order_revenue, 2),
+        "order_profit": round(order_profit, 2),
+        "receivables": round(receivables, 2),
+        "payables": round(payables, 2),
+        "category_breakdown": category_breakdown,
+        "monthly_trend": monthly_trend,
+    }
+
+
+# ---------------- Receipt Scanner ----------------
+@admin_router.post("/scan-receipt")
+async def scan_receipt(file: UploadFile = File(...)):
+    if not AI_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Receipt scanning is unavailable in this environment (emergentintegrations not installed).")
+    content = await file.read()
+    b64 = base64.b64encode(content).decode("utf-8")
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"scan-{uuid.uuid4()}",
+        system_message=(
+            "You are an expert receipt and invoice OCR extraction engine. Extract structured data "
+            "from the image and respond with ONLY a valid JSON object (no markdown, no code fences) "
+            "with keys: vendor (string), date (string YYYY-MM-DD or empty), total (number), "
+            "tax (number), currency (string), category (string best-guess expense category), "
+            "line_items (array of {description, amount}). Use 0 for unknown numbers and empty string for unknown text."
+        ),
+    ).with_model("openai", MODEL)
+    msg = UserMessage(
+        text="Extract the receipt/invoice data as JSON.",
+        file_contents=[ImageContent(image_base64=b64)],
+    )
+    resp = await chat.send_message(msg)
+    text = resp.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1] if "```" in text else text
+        text = text.replace("json", "", 1).strip()
+    try:
+        data = json.loads(text)
+    except Exception:
+        start = text.find("{")
+        end = text.rfind("}")
+        data = json.loads(text[start:end + 1]) if start >= 0 else {"vendor": "", "total": 0}
+    return data
+
+
+# ---------------- AI Chat (streaming) ----------------
+@admin_router.get("/chat/{session_id}")
+async def chat_history(session_id: str):
+    docs = await db.chat_messages.find({"session_id": session_id}).sort("created_at", 1).to_list(1000)
+    return [clean(d) for d in docs]
+
+
+@admin_router.post("/chat")
+async def chat(payload: ChatRequest):
+    if not AI_AVAILABLE:
+        raise HTTPException(status_code=503, detail="AI assistant is unavailable in this environment (emergentintegrations not installed).")
+    await db.chat_messages.insert_one({
+        "session_id": payload.session_id,
+        "role": "user",
+        "content": payload.message,
+        "created_at": now_iso(),
+    })
+
+    # Provide business context to the assistant
+    dash = await dashboard()
+    context = (
+        f"Business snapshot -> Income: {dash['total_income']}, Expenses: {dash['total_expense']}, "
+        f"Net profit: {dash['net_profit']}, Receivables: {dash['receivables']}, Payables: {dash['payables']}, "
+        f"Orders: {dash['order_count']}."
+    )
+
+    chat_client = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=payload.session_id,
+        system_message=(
+            "You are an expert AI accountant and financial advisor for a small business owner. "
+            "Answer questions about accounting, bookkeeping, taxes, cash flow and their business "
+            "finances clearly and concisely. Use the provided business snapshot when relevant. "
+            + context
+        ),
+    ).with_model("openai", MODEL)
+
+    async def event_generator():
+        full = ""
+        async for event in chat_client.stream_message(UserMessage(text=payload.message)):
+            if isinstance(event, TextDelta):
+                full += event.content
+                yield f"data: {json.dumps({'delta': event.content})}\n\n"
+            elif isinstance(event, StreamDone):
+                break
+        await db.chat_messages.insert_one({
+            "session_id": payload.session_id,
+            "role": "assistant",
+            "content": full,
+            "created_at": now_iso(),
+        })
+        yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---------------- Payment Reminders ----------------
+@admin_router.get("/reminders")
+async def reminders():
+    orders = await db.orders.find().to_list(5000)
+    agg = {}
+    for o in orders:
+        cust = (o.get("customer") or "").strip()
+        if not cust:
+            continue
+        bal = (o.get("sale_amount", 0) or 0) - (o.get("received_amount", 0) or 0)
+        e = agg.setdefault(cust, {"customer": cust, "outstanding": 0.0, "orders": 0, "last_date": ""})
+        e["outstanding"] += bal
+        e["orders"] += 1
+        d = o.get("order_date", "") or ""
+        if d > e["last_date"]:
+            e["last_date"] = d
+    result = [v for v in agg.values() if v["outstanding"] > 0.009]
+    result.sort(key=lambda x: -x["outstanding"])
+    for r in result:
+        r["outstanding"] = round(r["outstanding"], 2)
+    return result
+
+
+class DraftReq(BaseModel):
+    customer: str
+    outstanding: float
+    tone: str = "friendly"
+
+
+@admin_router.post("/reminders/draft")
+async def draft_reminder(payload: DraftReq):
+    if not AI_AVAILABLE:
+        raise HTTPException(status_code=503, detail="AI reminder drafting is unavailable in this environment (emergentintegrations not installed).")
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"draft-{uuid.uuid4()}",
+        system_message=(
+            "You write short, polite, professional payment reminder emails for a small business. "
+            "Keep it under 130 words, warm but clear. Include a 'Subject:' line at the top."
+        ),
+    ).with_model("openai", MODEL)
+    resp = await chat.send_message(UserMessage(
+        text=(
+            f"Write a {payload.tone} payment reminder email to a customer named '{payload.customer}' "
+            f"who has an outstanding balance of ${payload.outstanding:.2f}. "
+            "Politely ask them to settle the balance and offer to help with any questions."
+        )
+    ))
+    return {"message": resp.strip()}
+
+
+@api_router.get("/")
+async def root():
+    return {"message": "AI Accountant API"}
+
+
+# ---------------- Auth endpoints (public + admin) ----------------
+class LoginReq(BaseModel):
+    email: str
+    password: str
+
+
+class CustomerUserCreate(BaseModel):
+    email: str
+    password: str
+    customer_name: str
+    name: str = ""
+
+
+@api_router.post("/auth/login")
+async def login(payload: LoginReq):
+    email = payload.email.strip().lower()
+    user = await db.users.find_one({"email": email})
+    if not user or not verify_password(payload.password, user.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = create_token(user)
+    user["_id"] = str(user["_id"])
+    user.pop("password_hash", None)
+    return {"token": token, "user": user}
+
+
+@api_router.get("/auth/me")
+async def auth_me(user: dict = Depends(get_current_user)):
+    return user
+
+
+@admin_router.get("/auth/customers")
+async def list_customer_users():
+    docs = await db.users.find({"role": "customer"}).sort("created_at", -1).to_list(1000)
+    for d in docs:
+        d["_id"] = str(d["_id"])
+        d.pop("password_hash", None)
+    return docs
+
+
+@admin_router.post("/auth/customers")
+async def create_customer_user(payload: CustomerUserCreate):
+    email = payload.email.strip().lower()
+    if "@" not in email or "." not in email:
+        raise HTTPException(status_code=400, detail="Invalid email address")
+    if len(payload.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="Email already exists")
+    doc = {
+        "email": email,
+        "password_hash": hash_password(payload.password),
+        "name": payload.name or payload.customer_name,
+        "customer_name": payload.customer_name,
+        "role": "customer",
+        "created_at": now_iso(),
+    }
+    res = await db.users.insert_one(doc)
+    doc["_id"] = str(res.inserted_id)
+    doc.pop("password_hash", None)
+    return doc
+
+
+@admin_router.delete("/auth/customers/{uid}")
+async def delete_customer_user(uid: str):
+    await db.users.delete_one({"_id": ObjectId(uid), "role": "customer"})
+    return {"ok": True}
+
+
+# ---------------- Inventory (Products) ----------------
+class ProductCreate(BaseModel):
+    name: str
+    sku: str = ""
+    stock: float = 0.0
+    unit_cost: float = 0.0
+    unit_price: float = 0.0
+    low_stock_threshold: float = 5.0
+    pc: str = ""
+    superseded: str = ""
+    superseded_from: str = ""
+    model: str = ""
+    availability: str = ""
+
+
+@admin_router.post("/products/upload")
+async def upload_products(file: UploadFile = File(...)):
+    content = await file.read()
+    fname = (file.filename or "").lower()
+    rows = []
+    if fname.endswith(".csv"):
+        reader = csv.DictReader(io.StringIO(content.decode("utf-8", errors="ignore")))
+        for r in reader:
+            rows.append({(k or "").strip().lower(): v for k, v in r.items()})
+    else:
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        ws = wb.active
+        data = list(ws.iter_rows(values_only=True))
+        headers = [str(h).strip().lower() if h else "" for h in data[0]]
+        for r in data[1:]:
+            if not any(r):
+                continue
+            rows.append({headers[i]: r[i] for i in range(len(headers)) if headers[i]})
+
+    def g(row, *keys):
+        for k in keys:
+            if k in row and row[k] not in (None, ""):
+                return row[k]
+        return ""
+
+    def fnum(v):
+        try:
+            return float(str(v).replace(",", "").strip() or 0)
+        except Exception:
+            return 0.0
+
+    count = 0
+    for r in rows:
+        sku = str(g(r, "part number", "part no", "part no.", "sku", "code") or "").strip()
+        name = str(g(r, "description", "name", "item") or sku).strip()
+        if not sku and not name:
+            continue
+        doc = {
+            "name": name,
+            "sku": sku,
+            "stock": fnum(g(r, "req qty", "req. qty", "qty", "quantity", "stock")),
+            "unit_cost": fnum(g(r, "req. price", "req price", "cost", "unit_cost")),
+            "unit_price": fnum(g(r, "net price", "price", "unit_price")),
+            "pc": str(g(r, "pc") or ""),
+            "superseded": str(g(r, "superseded") or ""),
+            "superseded_from": str(g(r, "superseded from") or ""),
+            "model": str(g(r, "model") or ""),
+            "availability": str(g(r, "availability") or ""),
+        }
+        query = {"sku": sku} if sku else {"name": name}
+        existing = await db.products.find_one(query)
+        if existing:
+            await db.products.update_one({"_id": existing["_id"]}, {"$set": doc})
+        else:
+            doc["low_stock_threshold"] = 5.0
+            doc["created_at"] = now_iso()
+            await db.products.insert_one(doc)
+        count += 1
+    if count == 0:
+        raise HTTPException(status_code=400, detail="No valid rows. Expected columns like: Part Number, Description, Req Qty, Req. price, Net Price")
+    return {"imported": count}
+
+
+@admin_router.get("/products")
+async def list_products():
+    docs = await db.products.find().sort("name", 1).to_list(2000)
+    return [clean(d) for d in docs]
+
+
+@admin_router.post("/products")
+async def create_product(payload: ProductCreate):
+    data = payload.model_dump()
+    data["created_at"] = now_iso()
+    res = await db.products.insert_one(data)
+    return clean(await db.products.find_one({"_id": res.inserted_id}))
+
+
+@admin_router.put("/products/{pid}")
+async def update_product(pid: str, payload: ProductCreate):
+    await db.products.update_one({"_id": ObjectId(pid)}, {"$set": payload.model_dump()})
+    return clean(await db.products.find_one({"_id": ObjectId(pid)}))
+
+
+@admin_router.get("/products/low-stock")
+async def low_stock():
+    docs = await db.products.find().to_list(2000)
+    return [clean(d) for d in docs if (d.get("stock", 0) <= d.get("low_stock_threshold", 0))]
+
+
+@admin_router.delete("/products/{pid}")
+async def delete_product(pid: str):
+    await db.products.delete_one({"_id": ObjectId(pid)})
+    return {"ok": True}
+
+
+async def _adjust_stock(name, sku, qty):
+    """Increment stock for a product identified by sku or name; create if missing."""
+    query = {"sku": sku} if sku else {"name": name}
+    prod = await db.products.find_one(query)
+    if prod:
+        await db.products.update_one({"_id": prod["_id"]}, {"$inc": {"stock": qty}})
+    else:
+        await db.products.insert_one({
+            "name": name or sku, "sku": sku, "stock": max(qty, 0),
+            "unit_cost": 0.0, "unit_price": 0.0, "low_stock_threshold": 5.0,
+            "created_at": now_iso(),
+        })
+
+
+# ---------------- Purchases ----------------
+class PurchaseItem(BaseModel):
+    name: str = ""
+    sku: str = ""
+    qty: float = 0.0
+    unit_cost: float = 0.0
+
+
+class PurchaseCreate(BaseModel):
+    supplier: str = ""
+    ref: str = ""
+    date: Optional[str] = None
+    items: List[PurchaseItem] = []
+    notes: str = ""
+
+
+@admin_router.get("/purchases")
+async def list_purchases(supplier: Optional[str] = None):
+    q = {"supplier": supplier} if supplier else {}
+    docs = await db.purchases.find(q).sort("date", -1).to_list(2000)
+    return [clean(d) for d in docs]
+
+
+@admin_router.post("/purchases")
+async def create_purchase(payload: PurchaseCreate):
+    data = payload.model_dump()
+    if not data.get("date"):
+        data["date"] = now_iso()
+    data["total"] = sum(i["qty"] * i["unit_cost"] for i in data["items"])
+    data["created_at"] = now_iso()
+    res = await db.purchases.insert_one(data)
+    for it in data["items"]:
+        await _adjust_stock(it.get("name"), it.get("sku"), it.get("qty", 0))
+        if it.get("unit_cost"):
+            q = {"sku": it["sku"]} if it.get("sku") else {"name": it.get("name")}
+            await db.products.update_one(q, {"$set": {"unit_cost": it["unit_cost"]}})
+    return clean(await db.purchases.find_one({"_id": res.inserted_id}))
+
+
+@admin_router.delete("/purchases/{pid}")
+async def delete_purchase(pid: str):
+    pur = await db.purchases.find_one({"_id": ObjectId(pid)})
+    if pur:
+        for it in pur.get("items", []):
+            await _adjust_stock(it.get("name"), it.get("sku"), -it.get("qty", 0))
+        await db.purchases.delete_one({"_id": ObjectId(pid)})
+    return {"ok": True}
+
+
+@admin_router.post("/purchases/upload")
+async def upload_purchases(file: UploadFile = File(...), supplier: str = Form("")):
+    content = await file.read()
+    rows = []
+    fname = (file.filename or "").lower()
+    if fname.endswith(".csv"):
+        text = content.decode("utf-8", errors="ignore")
+        reader = csv.DictReader(io.StringIO(text))
+        for r in reader:
+            rows.append({(k or "").strip().lower(): v for k, v in r.items()})
+    else:
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        ws = wb.active
+        data = list(ws.iter_rows(values_only=True))
+        headers = [str(h).strip().lower() if h else "" for h in data[0]]
+        for r in data[1:]:
+            if not any(r):
+                continue
+            rows.append({headers[i]: r[i] for i in range(len(headers)) if headers[i]})
+
+    def g(row, *keys):
+        for k in keys:
+            if k in row and row[k] not in (None, ""):
+                return row[k]
+        return ""
+
+    def fnum(v):
+        try:
+            return float(str(v).replace(",", "").strip() or 0)
+        except Exception:
+            return 0.0
+
+    items = []
+    for r in rows:
+        name = str(g(r, "description", "name", "product", "item") or "").strip()
+        sku = str(g(r, "part number", "part no", "part no.", "sku", "code") or "").strip()
+        if not name and not sku:
+            continue
+        items.append({
+            "name": name or sku,
+            "sku": sku,
+            "qty": fnum(g(r, "confirmed qty", "confirmed quantity", "qty", "quantity")),
+            "unit_cost": fnum(g(r, "price", "unit_cost", "cost")),
+        })
+    if not items:
+        raise HTTPException(status_code=400, detail="No valid rows found. Expected columns: Part Number, Description, Confirmed Qty, Price, Total")
+    payload = PurchaseCreate(supplier=supplier, ref=f"UPLOAD-{file.filename}", items=[PurchaseItem(**i) for i in items])
+    result = await create_purchase(payload)
+    return {"created": True, "items": len(items), "purchase": result}
+
+
+class ReorderItem(BaseModel):
+    product_id: str
+    qty: float = 0.0
+
+
+class ReorderReq(BaseModel):
+    supplier: str = ""
+    items: List[ReorderItem] = []
+
+
+@admin_router.post("/purchases/reorder")
+async def reorder(payload: ReorderReq):
+    items = []
+    for r in payload.items:
+        prod = await db.products.find_one({"_id": ObjectId(r.product_id)})
+        if not prod or r.qty <= 0:
+            continue
+        items.append(PurchaseItem(name=prod["name"], sku=prod.get("sku", ""), qty=r.qty, unit_cost=prod.get("unit_cost", 0)))
+    if not items:
+        raise HTTPException(status_code=400, detail="No items to reorder")
+    return await create_purchase(PurchaseCreate(supplier=payload.supplier, ref="REORDER", items=items))
+
+
+@admin_router.post("/purchases/scan")
+async def scan_purchase(file: UploadFile = File(...)):
+    if not AI_AVAILABLE:
+        raise HTTPException(status_code=503, detail="AI purchase-invoice scanning is unavailable in this environment (emergentintegrations not installed).")
+    content = await file.read()
+    b64 = base64.b64encode(content).decode("utf-8")
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY, session_id=f"pscan-{uuid.uuid4()}",
+        system_message=(
+            "You extract purchase invoice data. Respond with ONLY valid JSON (no fences) with keys: "
+            "supplier (string), ref (string), items (array of {name, sku, qty, unit_cost}). Use 0/empty for unknowns."
+        ),
+    ).with_model("openai", MODEL)
+    resp = await chat.send_message(UserMessage(text="Extract purchase invoice as JSON.", file_contents=[ImageContent(image_base64=b64)]))
+    text = resp.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1].replace("json", "", 1).strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        s, e = text.find("{"), text.rfind("}")
+        return json.loads(text[s:e + 1]) if s >= 0 else {"supplier": "", "items": []}
+
+
+# ---------------- Invoices ----------------
+class InvoiceItem(BaseModel):
+    product_id: str = ""
+    name: str = ""
+    sku: str = ""
+    description: str = ""
+    qty: float = 0.0
+    unit_price: float = 0.0
+    req_price: float = 0.0
+    pc: str = ""
+    superseded: str = ""
+    superseded_from: str = ""
+    model: str = ""
+    availability: str = ""
+
+
+class InvoiceCreate(BaseModel):
+    invoice_number: str
+    customer: str = ""
+    date: Optional[str] = None
+    items: List[InvoiceItem] = []
+    tax_percent: float = 0.0
+    status: str = "unpaid"
+    notes: str = ""
+    ship_type: str = "EX-STOCK"
+    currency: str = "AED"
+
+
+def _invoice_totals(data):
+    subtotal = sum(i["qty"] * i["unit_price"] for i in data["items"])
+    tax = subtotal * (data.get("tax_percent", 0) / 100.0)
+    data["subtotal"] = round(subtotal, 2)
+    data["tax"] = round(tax, 2)
+    data["total"] = round(subtotal + tax, 2)
+    return data
+
+
+@admin_router.get("/invoices")
+async def list_invoices():
+    docs = await db.invoices.find().sort("date", -1).to_list(2000)
+    return [clean(d) for d in docs]
+
+
+@admin_router.post("/invoices")
+async def create_invoice(payload: InvoiceCreate):
+    data = payload.model_dump()
+    if await db.invoices.find_one({"invoice_number": data["invoice_number"]}):
+        raise HTTPException(status_code=400, detail="Invoice number already exists")
+    # validate stock availability for tracked products
+    for it in data["items"]:
+        if it.get("product_id"):
+            prod = await db.products.find_one({"_id": ObjectId(it["product_id"])})
+            if prod and (prod.get("stock", 0) < it.get("qty", 0)):
+                raise HTTPException(status_code=400, detail=f"Not enough stock for {prod.get('name')}: {prod.get('stock',0)} available")
+    if not data.get("date"):
+        data["date"] = now_iso()
+    data = _invoice_totals(data)
+    data["created_at"] = now_iso()
+    res = await db.invoices.insert_one(data)
+    for it in data["items"]:
+        if it.get("product_id"):
+            await db.products.update_one({"_id": ObjectId(it["product_id"])}, {"$inc": {"stock": -it.get("qty", 0)}})
+    return clean(await db.invoices.find_one({"_id": res.inserted_id}))
+
+
+@admin_router.delete("/invoices/{iid}")
+async def delete_invoice(iid: str):
+    inv = await db.invoices.find_one({"_id": ObjectId(iid)})
+    if inv:
+        for it in inv.get("items", []):
+            if it.get("product_id"):
+                await db.products.update_one({"_id": ObjectId(it["product_id"])}, {"$inc": {"stock": it.get("qty", 0)}})
+        await db.invoices.delete_one({"_id": ObjectId(iid)})
+    return {"ok": True}
+
+
+class InvoiceStatusReq(BaseModel):
+    status: str
+
+
+@admin_router.patch("/invoices/{iid}/status")
+async def set_invoice_status(iid: str, payload: InvoiceStatusReq):
+    await db.invoices.update_one({"_id": ObjectId(iid)}, {"$set": {"status": payload.status}})
+    return clean(await db.invoices.find_one({"_id": ObjectId(iid)}))
+
+
+@admin_router.put("/invoices/{iid}")
+async def update_invoice(iid: str, payload: InvoiceCreate):
+    existing = await db.invoices.find_one({"_id": ObjectId(iid)})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    dup = await db.invoices.find_one({"invoice_number": payload.invoice_number, "_id": {"$ne": ObjectId(iid)}})
+    if dup:
+        raise HTTPException(status_code=400, detail="Invoice number already exists")
+
+    data = payload.model_dump()
+    data = _invoice_totals(data)
+
+    # net stock change per product: old_qty - new_qty (positive => stock returns)
+    def qty_map(items):
+        m = {}
+        for it in items:
+            if it.get("product_id"):
+                m[it["product_id"]] = m.get(it["product_id"], 0) + it.get("qty", 0)
+        return m
+
+    old_m = qty_map(existing.get("items", []))
+    new_m = qty_map(data["items"])
+    for pid in set(list(old_m) + list(new_m)):
+        net = old_m.get(pid, 0) - new_m.get(pid, 0)
+        if net < 0:  # stock must decrease further
+            prod = await db.products.find_one({"_id": ObjectId(pid)})
+            if prod and prod.get("stock", 0) < (-net):
+                raise HTTPException(status_code=400, detail=f"Not enough stock for {prod.get('name')}: {prod.get('stock',0)} available")
+
+    data["date"] = existing.get("date")
+    data["created_at"] = existing.get("created_at")
+    await db.invoices.update_one({"_id": ObjectId(iid)}, {"$set": data})
+    for pid in set(list(old_m) + list(new_m)):
+        net = old_m.get(pid, 0) - new_m.get(pid, 0)
+        if net != 0:
+            await db.products.update_one({"_id": ObjectId(pid)}, {"$inc": {"stock": net}})
+    return clean(await db.invoices.find_one({"_id": ObjectId(iid)}))
+
+
+@admin_router.get("/invoices/{iid}/excel")
+async def invoice_excel(iid: str):
+    inv = await db.invoices.find_one({"_id": ObjectId(iid)})
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Invoice"
+    ws["A1"] = "TAX INVOICE / فاتورة ضريبية"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = f"Invoice No / رقم الفاتورة: {inv.get('invoice_number','')}"
+    ws["A3"] = f"Customer / العميل: {inv.get('customer','')}"
+    ws["A4"] = f"Date / التاريخ: {(inv.get('date') or '')[:10]}"
+    headers = [
+        "S.NO رقم", "Part No. رقم القطع", "Description التفاصيل", "QTY/Pcs. العدد",
+        "AED/Pc. سعر الوحدة", "Taxable Amount AED المبلغ", "VAT Rate % معدل الضريبة",
+        "VAT Amount AED الضريبة", "TOTAL (incl VAT) AED المبلغ الأجمالي",
+    ]
+    hrow = 6
+    fill = PatternFill(start_color="2C302B", end_color="2C302B", fill_type="solid")
+    for c, h in enumerate(headers, start=1):
+        cell = ws.cell(row=hrow, column=c, value=h)
+        cell.font = Font(bold=True, color="FFFFFF", size=9)
+        cell.fill = fill
+        cell.alignment = Alignment(wrap_text=True, horizontal="center", vertical="center")
+    rate = inv.get("tax_percent", 0) or 0
+    r = hrow + 1
+    for i, it in enumerate(inv.get("items", []), start=1):
+        taxable = (it.get("qty", 0) or 0) * (it.get("unit_price", 0) or 0)
+        vat = taxable * rate / 100.0
+        ws.cell(row=r, column=1, value=i)
+        ws.cell(row=r, column=2, value=it.get("sku", ""))
+        ws.cell(row=r, column=3, value=it.get("name", ""))
+        ws.cell(row=r, column=4, value=it.get("qty", 0))
+        ws.cell(row=r, column=5, value=round(it.get("unit_price", 0), 2))
+        ws.cell(row=r, column=6, value=round(taxable, 2))
+        ws.cell(row=r, column=7, value=rate)
+        ws.cell(row=r, column=8, value=round(vat, 2))
+        ws.cell(row=r, column=9, value=round(taxable + vat, 2))
+        r += 1
+    ws.cell(row=r + 1, column=8, value="Subtotal").font = Font(bold=True)
+    ws.cell(row=r + 1, column=9, value=round(inv.get("subtotal", 0), 2))
+    ws.cell(row=r + 2, column=8, value="VAT").font = Font(bold=True)
+    ws.cell(row=r + 2, column=9, value=round(inv.get("tax", 0), 2))
+    ws.cell(row=r + 3, column=8, value="TOTAL").font = Font(bold=True)
+    ws.cell(row=r + 3, column=9, value=round(inv.get("total", 0), 2))
+    widths = [8, 16, 32, 10, 14, 18, 14, 16, 20]
+    for c, w in enumerate(widths, start=1):
+        ws.column_dimensions[ws.cell(row=hrow, column=c).column_letter].width = w
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(
+        content=buf.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=invoice-{inv.get('invoice_number','')}.xlsx"},
+    )
+
+
+# ---------------- Customer Portal ----------------
+@portal_router.get("/invoices")
+async def portal_invoices(user: dict = Depends(require_customer)):
+    docs = await db.invoices.find({"customer": user.get("customer_name")}).sort("date", -1).to_list(1000)
+    return [clean(d) for d in docs]
+
+
+@portal_router.get("/orders")
+async def portal_orders(user: dict = Depends(require_customer)):
+    docs = await db.orders.find({"customer": user.get("customer_name")}).sort("order_date", -1).to_list(1000)
+    return [clean(d) for d in docs]
+
+
+@portal_router.get("/soa")
+async def portal_soa(user: dict = Depends(require_customer)):
+    return await statement_of_account("customer", user.get("customer_name"))
+
+
+# ---------------- Startup: seed admin + indexes ----------------
+@app.on_event("startup")
+async def startup():
+    await db.users.create_index("email", unique=True)
+    admin_email = os.environ.get("ADMIN_EMAIL", "admin@ledgerly.com").lower()
+    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
+    existing = await db.users.find_one({"email": admin_email})
+    if existing is None:
+        await db.users.insert_one({
+            "email": admin_email, "password_hash": hash_password(admin_password),
+            "name": "Admin", "role": "admin", "created_at": now_iso(),
+        })
+    elif not verify_password(admin_password, existing.get("password_hash", "")):
+        await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
+
+
+app.include_router(api_router)
+app.include_router(admin_router)
+app.include_router(portal_router)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    client.close()

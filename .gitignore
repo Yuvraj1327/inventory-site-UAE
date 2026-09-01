@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Environment variables / secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Keep example environment files
+!.env.example
+
+# React / CRA
+build/
+dist/
+coverage/
+
+# Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE / Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Local databases / data
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated files
+uploads/
+tmp/
+.cache/
+
+# Supabase local development
+.supabase/
+
+# Mac
+.AppleDouble
+.LSOverride
