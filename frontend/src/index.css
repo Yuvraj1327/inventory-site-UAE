@@ -47,6 +47,10 @@ body {
     * {
         @apply border-border;
     }
+    html, body, #root {
+        overflow-x: hidden;
+        width: 100%;
+    }
     body {
         @apply bg-background text-foreground;
         background-image: radial-gradient(hsl(var(--foreground) / 0.02) 1px, transparent 1px);
@@ -54,15 +58,26 @@ body {
     }
     h1, h2, h3, h4 {
         font-family: 'Manrope', sans-serif;
+        letter-spacing: -0.01em;
     }
     .font-mono, .tabular {
         font-family: 'IBM Plex Mono', monospace;
+    }
+    /* Every table this app renders is wrapped in an overflow-x-auto
+       container by convention; this just keeps the scroll affordance
+       visually quiet (thin, on-brand) instead of the default chunky
+       browser bar, especially on the wide Orders/Purchases tables. */
+    .overflow-x-auto {
+        scrollbar-width: thin;
     }
 }
 
 @layer utilities {
     .tabular {
         font-variant-numeric: tabular-nums;
+    }
+    .shadow-card {
+        box-shadow: 0 1px 2px hsl(var(--foreground) / 0.04), 0 1px 12px hsl(var(--foreground) / 0.03);
     }
 }
 

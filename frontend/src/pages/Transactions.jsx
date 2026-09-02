@@ -179,6 +179,7 @@ export default function Transactions() {
             <p className="text-sm">No transactions yet.</p>
           </div>
         ) : (
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -216,6 +217,7 @@ export default function Transactions() {
               ))}
             </TableBody>
           </Table>
+          </div>
         )}
       </Card>
     </div>

@@ -272,6 +272,7 @@ export default function Purchases() {
         {rows.length === 0 ? (
           <div className="py-20 flex flex-col items-center gap-3 text-muted-foreground"><Truck size={40} weight="duotone" /><p className="text-sm">No purchases yet.</p></div>
         ) : (
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -306,6 +307,7 @@ export default function Purchases() {
               ))}
             </TableBody>
           </Table>
+          </div>
         )}
       </Card>
 

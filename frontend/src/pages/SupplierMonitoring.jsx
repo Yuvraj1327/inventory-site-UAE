@@ -33,13 +33,13 @@ export default function SupplierMonitoring() {
   const [compareRows, setCompareRows] = useState(null);
 
   const load = () => {
-    api.get("/supplier-monitoring/checks").then((r) => setChecks(r.data)).catch(() => setChecks([]));
-    api.get("/supplier-monitoring/tasks").then((r) => setTasks(r.data)).catch(() => setTasks([]));
-    api.get("/supplier-monitoring/performance").then((r) => setPerformance(r.data)).catch(() => setPerformance([]));
+    api.get("/supplier-monitoring/checks").then((r) => setChecks(r.data)).catch((e) => { console.error("Failed to load price checks:", e); setChecks([]); });
+    api.get("/supplier-monitoring/tasks").then((r) => setTasks(r.data)).catch((e) => { console.error("Failed to load monitoring tasks:", e); setTasks([]); });
+    api.get("/supplier-monitoring/performance").then((r) => setPerformance(r.data)).catch((e) => { console.error("Failed to load supplier performance:", e); setPerformance([]); });
   };
   useEffect(() => {
     load();
-    api.get("/parties?kind=supplier").then((r) => setSuppliers(r.data)).catch(() => {});
+    api.get("/parties?kind=supplier").then((r) => setSuppliers(r.data)).catch((e) => console.error("Failed to load suppliers:", e));
   }, []);
 
   const saveCheck = async () => {

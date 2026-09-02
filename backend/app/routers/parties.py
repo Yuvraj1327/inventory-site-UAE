@@ -8,6 +8,25 @@ from app.services.compat import with_legacy_id, clean_list, make_lpo, next_accou
 
 router = APIRouter(prefix="/api", tags=["parties"])
 
+# Explicit allow-lists of columns that actually exist on each table
+# (per supabase/migrations/0001_init_schema.sql). PartyCreate is a single
+# shared Pydantic model for both customer and supplier forms, but the two
+# tables don't share the same columns (customers has no `brand_focus`,
+# suppliers has no `company`/`is_walkin`/`tax_registration_number`/
+# `margin_percent`) — inserting the full payload unfiltered fails with a
+# PGRST204 "column not found" for whichever field the target table
+# doesn't have. Filtering to each table's real columns fixes that for
+# every field at once, not just the two seen in testing so far.
+CUSTOMER_COLUMNS = {
+    "name", "company", "brand_focus", "is_walkin", "tax_registration_number", "country", "city",
+    "office_address", "phone", "mobile", "whatsapp", "email",
+    "payment_terms_days", "margin_percent", "special_note",
+}
+SUPPLIER_COLUMNS = {
+    "name", "country", "city", "office_address", "phone", "mobile", "whatsapp",
+    "email", "brand_focus", "payment_terms_days", "special_note",
+}
+
 
 class PartyCreate(BaseModel):
     name: str
@@ -54,7 +73,9 @@ async def list_parties(kind: Optional[str] = None, staff=Depends(require_staff_o
 async def create_party(payload: PartyCreate, staff=Depends(require_staff_or_admin)):
     sb = get_service_client()
     table = _table_for(payload.kind)
-    data = payload.model_dump(exclude={"kind"})
+    raw = payload.model_dump(exclude={"kind"})
+    allowed = CUSTOMER_COLUMNS if payload.kind == "customer" else SUPPLIER_COLUMNS
+    data = {k: v for k, v in raw.items() if k in allowed}
 
     if payload.kind == "customer":
         if not data.get("is_walkin") and not data.get("tax_registration_number"):
@@ -63,10 +84,6 @@ async def create_party(payload: PartyCreate, staff=Depends(require_staff_or_admi
                 detail="A registered customer needs a Tax Registration Number, or mark them as Walk-in.",
             )
         data["account_no"] = await next_account_no(sb)
-    else:
-        # suppliers table has no lpo/is_walkin/tax_registration_number/margin_percent columns
-        for k in ("is_walkin", "tax_registration_number", "margin_percent"):
-            data.pop(k, None)
 
     data["created_at"] = now_iso()
     res = sb.table(table).insert(data).execute()

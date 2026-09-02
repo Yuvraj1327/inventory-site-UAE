@@ -16,6 +16,11 @@ import Inventory from "@/pages/Inventory";
 import Purchases from "@/pages/Purchases";
 import Invoices from "@/pages/Invoices";
 import Portal from "@/pages/Portal";
+import LostSales from "@/pages/LostSales";
+import SupplierMonitoring from "@/pages/SupplierMonitoring";
+import AIAgentControlCenter from "@/pages/AIAgentControlCenter";
+import CustomerIntelligence from "@/pages/CustomerIntelligence";
+import Accounting from "@/pages/Accounting";
 
 function App() {
   return (
@@ -26,13 +31,18 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/portal" element={<ProtectedRoute role="customer"><Portal /></ProtectedRoute>} />
-            <Route path="/" element={<ProtectedRoute role="admin"><Layout /></ProtectedRoute>}>
+            <Route path="/" element={<ProtectedRoute role={["admin", "staff"]}><Layout /></ProtectedRoute>}>
               <Route index element={<Dashboard />} />
               <Route path="transactions" element={<Transactions />} />
               <Route path="orders" element={<Orders />} />
               <Route path="inventory" element={<Inventory />} />
               <Route path="purchases" element={<Purchases />} />
               <Route path="invoices" element={<Invoices />} />
+              <Route path="accounting" element={<Accounting />} />
+              <Route path="lost-sales" element={<LostSales />} />
+              <Route path="supplier-monitoring" element={<SupplierMonitoring />} />
+              <Route path="ai-agent" element={<AIAgentControlCenter />} />
+              <Route path="customer-intelligence" element={<CustomerIntelligence />} />
               <Route path="customers" element={<Parties kind="customer" />} />
               <Route path="suppliers" element={<Parties kind="supplier" />} />
               <Route path="reminders" element={<Reminders />} />

@@ -15,13 +15,23 @@ const num = (v) => parseFloat(v || 0) || 0;
 
 export default function LostSales() {
   const [rows, setRows] = useState(null); // null = loading
+  const [demand, setDemand] = useState(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
 
-  const load = () => api.get("/lost-sales").then((r) => setRows(r.data)).catch(() => setRows([]));
-  useEffect(() => { load(); }, []);
+  const load = () => api.get("/lost-sales").then((r) => setRows(r.data)).catch((e) => {
+    // eslint-disable-next-line no-console
+    console.error("Failed to load lost sales:", e);
+    setRows([]);
+  });
+  const loadDemand = () => api.get("/lost-sales/demand-summary").then((r) => setDemand(r.data)).catch((e) => {
+    // eslint-disable-next-line no-console
+    console.error("Failed to load demand summary:", e);
+    setDemand([]);
+  });
+  useEffect(() => { load(); loadDemand(); }, []);
 
   const openNew = () => { setForm(empty); setOpen(true); };
 
@@ -37,7 +47,7 @@ export default function LostSales() {
         reason: form.reason, date: form.date || null,
       });
       toast.success("Lost sale recorded");
-      setOpen(false); load();
+      setOpen(false); load(); loadDemand();
     } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
     setSaving(false);
   };
@@ -91,6 +101,31 @@ export default function LostSales() {
           </DialogContent>
         </Dialog>
       </div>
+
+      <Card className="p-5">
+        <h2 className="text-sm font-medium mb-3">Demand summary by part <span className="text-xs font-normal text-muted-foreground">— for stock/purchasing decisions</span></h2>
+        {demand === null ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">Loading…</p>
+        ) : demand.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No demand recorded yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader><TableRow><TableHead>Part Number</TableHead><TableHead className="text-right">Total Requested</TableHead><TableHead className="text-right">Total Lost</TableHead><TableHead className="text-right">Occurrences</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {demand.map((d) => (
+                  <TableRow key={d.part_number} data-testid="demand-summary-row">
+                    <TableCell className="font-mono text-xs">{d.part_number}</TableCell>
+                    <TableCell className="text-right">{d.total_requested}</TableCell>
+                    <TableCell className="text-right"><Badge className="bg-destructive/15 text-destructive border-destructive/30">{d.total_lost}</Badge></TableCell>
+                    <TableCell className="text-right">{d.occurrences}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </Card>
 
       <Card className="p-5">
         <Input placeholder="Search by part number or customer…" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-sm mb-4" data-testid="lost-sales-search" />

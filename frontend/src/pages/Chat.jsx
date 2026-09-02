@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { API } from "@/lib/api";
+import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Sparkle, PaperPlaneTilt, User } from "@phosphor-icons/react";
+import { Sparkle, PaperPlaneTilt, User, Info } from "@phosphor-icons/react";
 
 const SESSION = "main-session";
 const SUGGESTIONS = [
@@ -12,17 +13,40 @@ const SUGGESTIONS = [
   "How much do customers still owe me?",
 ];
 
+// This page's endpoints require the same Supabase auth as every other
+// admin/staff page (see backend/app/routers/ai_stub.py) but historically
+// used raw fetch() with no Authorization header at all — every request
+// 401'd before it ever reached the "AI not configured" check. This
+// builds the same header the shared `api` axios client attaches
+// elsewhere (see lib/api.js), so the real state (no AI provider
+// configured yet — see Phase 1/4 reports) is what actually surfaces,
+// rather than a misleading auth error.
+async function authHeaders(extra = {}) {
+  const { data } = await supabase.auth.getSession();
+  const token = data?.session?.access_token;
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
+}
+
 export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [notConfigured, setNotConfigured] = useState(false);
   const endRef = useRef();
 
   useEffect(() => {
-    fetch(`${API}/chat/${SESSION}`)
-      .then((r) => r.json())
-      .then((d) => setMessages(d.map((m) => ({ role: m.role, content: m.content }))))
-      .catch(() => {});
+    (async () => {
+      try {
+        const headers = await authHeaders();
+        const r = await fetch(`${API}/chat/${SESSION}`, { headers });
+        if (r.status === 503) { setNotConfigured(true); return; }
+        if (!r.ok) return;
+        const d = await r.json();
+        setMessages(d.map((m) => ({ role: m.role, content: m.content })));
+      } catch {
+        // stay on the empty/suggestions state
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -31,17 +55,34 @@ export default function Chat() {
 
   const send = async (text) => {
     const q = (text ?? input).trim();
-    if (!q || streaming) return;
+    if (!q || streaming || notConfigured) return;
     setInput("");
     setMessages((m) => [...m, { role: "user", content: q }, { role: "assistant", content: "" }]);
     setStreaming(true);
 
     try {
+      const headers = await authHeaders({ "Content-Type": "application/json" });
       const res = await fetch(`${API}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ session_id: SESSION, message: q }),
       });
+
+      if (res.status === 503) {
+        const body = await res.json().catch(() => ({}));
+        setNotConfigured(true);
+        setMessages((m) => {
+          const copy = [...m];
+          copy[copy.length - 1] = { role: "assistant", content: body.detail || "The AI Assistant isn't configured in this environment yet." };
+          return copy;
+        });
+        setStreaming(false);
+        return;
+      }
+      if (!res.ok || !res.body) {
+        throw new Error(`Request failed (${res.status})`);
+      }
+
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -87,6 +128,13 @@ export default function Chat() {
           <p className="text-xs text-muted-foreground">Ask about accounting, taxes or your business finances</p>
         </div>
       </div>
+
+      {notConfigured && (
+        <div className="mb-4 flex items-start gap-3 px-4 py-3 rounded-lg border border-warning/30 bg-warning/5 text-sm" data-testid="chat-not-configured">
+          <Info size={18} className="text-warning shrink-0 mt-0.5" />
+          <span className="text-muted-foreground">No AI provider is configured in this environment yet, so the assistant can't respond. This is an expected, safe state — not a bug.</span>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto space-y-5 pr-1" data-testid="chat-messages">
         {messages.length === 0 && (
