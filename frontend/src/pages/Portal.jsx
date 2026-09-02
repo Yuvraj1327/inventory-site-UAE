@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
-import { api, money, fmtDate } from "@/lib/api";
+import { api, money, fmtDate, formatApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { printInvoice, printSoa } from "@/lib/pdf";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Wallet, SignOut, FilePdf, Receipt, FileText, Package, CheckCircle } from "@phosphor-icons/react";
+import { Wallet, SignOut, FilePdf, Receipt, FileText, Package, CheckCircle, MagnifyingGlass, ShoppingCart, Trash } from "@phosphor-icons/react";
+import { toast } from "sonner";
 
 const CHECK_KEYS = ["pricing_status", "pi_status", "supplier_pkl", "customer_pkl", "delivery_status"];
 
@@ -16,12 +18,52 @@ export default function Portal() {
   const [invoices, setInvoices] = useState([]);
   const [orders, setOrders] = useState([]);
   const [soa, setSoa] = useState(null);
+  const [account, setAccount] = useState(null);
 
-  useEffect(() => {
+  const [q, setQ] = useState("");
+  const [products, setProducts] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [cart, setCart] = useState({}); // product_id -> {product, qty}
+  const [placingOrder, setPlacingOrder] = useState(false);
+
+  const loadAll = () => {
     api.get("/portal/invoices").then((r) => setInvoices(r.data)).catch(() => {});
     api.get("/portal/orders").then((r) => setOrders(r.data)).catch(() => {});
     api.get("/portal/soa").then((r) => setSoa(r.data)).catch(() => {});
-  }, []);
+    api.get("/portal/account").then((r) => setAccount(r.data)).catch(() => {});
+  };
+  useEffect(() => { loadAll(); }, []);
+
+  const search = async () => {
+    setSearching(true);
+    try {
+      const r = await api.get(`/portal/products${q ? `?q=${encodeURIComponent(q)}` : ""}`);
+      setProducts(r.data);
+    } catch {
+      toast.error("Could not load products");
+    }
+    setSearching(false);
+  };
+  useEffect(() => { search(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addToCart = (p) => setCart((c) => ({ ...c, [p.product_id]: { product: p, qty: (c[p.product_id]?.qty || 0) + 1 } }));
+  const setQty = (pid, qty) => setCart((c) => (qty <= 0 ? Object.fromEntries(Object.entries(c).filter(([k]) => k !== pid)) : { ...c, [pid]: { ...c[pid], qty } }));
+  const cartItems = Object.values(cart);
+  const cartTotal = cartItems.reduce((s, i) => s + i.qty * i.product.price, 0);
+
+  const placeOrder = async () => {
+    if (cartItems.length === 0) return;
+    setPlacingOrder(true);
+    try {
+      await api.post("/portal/orders", { lines: cartItems.map((i) => ({ part_number: i.product.part_number, order_qty: i.qty })) });
+      toast.success("Order placed — it's now in Orders Follow-Up.");
+      setCart({});
+      loadAll();
+    } catch (e) {
+      toast.error(formatApiError(e.response?.data?.detail));
+    }
+    setPlacingOrder(false);
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -36,7 +78,7 @@ export default function Portal() {
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right hidden sm:block">
-              <div className="text-sm font-medium">{user?.customer_name}</div>
+              <div className="text-sm font-medium">{account?.name || user?.full_name || user?.email}</div>
               <div className="text-xs text-muted-foreground">{user?.email}</div>
             </div>
             <Button variant="secondary" size="sm" onClick={logout} data-testid="portal-logout" className="rounded-full gap-2"><SignOut size={16} /> Sign out</Button>
@@ -47,7 +89,10 @@ export default function Portal() {
       <main className="max-w-5xl mx-auto px-5 sm:px-8 py-8 space-y-8" data-testid="portal-page">
         <div>
           <div className="text-xs uppercase tracking-[0.2em] font-semibold text-muted-foreground">Welcome</div>
-          <h1 className="text-4xl sm:text-5xl tracking-tight font-light mt-1" style={{ fontFamily: "Manrope" }}>{user?.customer_name}</h1>
+          <h1 className="text-4xl sm:text-5xl tracking-tight font-light mt-1" style={{ fontFamily: "Manrope" }}>{account?.name || user?.full_name || "—"}</h1>
+          {account?.is_walkin === false && account?.tax_registration_number && (
+            <p className="text-xs text-muted-foreground mt-1">TRN: {account.tax_registration_number}</p>
+          )}
         </div>
 
         {soa && (
@@ -58,12 +103,71 @@ export default function Portal() {
           </div>
         )}
 
-        <Tabs defaultValue="invoices">
+        <Tabs defaultValue="shop">
           <TabsList data-testid="portal-tabs">
+            <TabsTrigger value="shop" data-testid="tab-shop">Shop</TabsTrigger>
             <TabsTrigger value="invoices" data-testid="tab-invoices">Invoices</TabsTrigger>
             <TabsTrigger value="statement" data-testid="tab-statement">Statement</TabsTrigger>
             <TabsTrigger value="orders" data-testid="tab-orders">Order Status</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="shop" className="mt-5 space-y-5">
+            <Card className="bg-white border-border/60 shadow-sm rounded-xl p-5">
+              <div className="flex gap-2 mb-4 max-w-md">
+                <Input placeholder="Search parts by number, description, or brand…" value={q}
+                  onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()} data-testid="portal-product-search" />
+                <Button variant="outline" onClick={search}><MagnifyingGlass size={16} /></Button>
+              </div>
+              {searching ? (
+                <p className="text-sm text-muted-foreground py-6 text-center">Searching…</p>
+              ) : products.length === 0 ? (
+                <Empty icon={Package} text="No parts found." />
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader><TableRow>
+                      <TableHead>Part Number</TableHead><TableHead>Description</TableHead><TableHead>Brand</TableHead>
+                      <TableHead className="text-right">In Stock</TableHead><TableHead className="text-right">Your Price</TableHead><TableHead></TableHead>
+                    </TableRow></TableHeader>
+                    <TableBody>
+                      {products.map((p) => (
+                        <TableRow key={p.product_id} data-testid="portal-product-row">
+                          <TableCell className="font-mono text-xs">{p.part_number}</TableCell>
+                          <TableCell>{p.description}</TableCell>
+                          <TableCell className="text-muted-foreground">{p.brand}</TableCell>
+                          <TableCell className="text-right">
+                            {p.available_qty > 0 ? <Badge className="bg-success/15 text-success border-success/30">{p.available_qty}</Badge> : <Badge variant="outline">Out of stock</Badge>}
+                          </TableCell>
+                          <TableCell className="text-right font-mono tabular">${money(p.price)}</TableCell>
+                          <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => addToCart(p)}>Add</Button></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </Card>
+
+            {cartItems.length > 0 && (
+              <Card className="bg-white border-border/60 shadow-sm rounded-xl p-5" data-testid="portal-cart">
+                <h3 className="text-sm font-medium mb-3 flex items-center gap-2"><ShoppingCart size={18} /> Your order</h3>
+                <div className="space-y-2 mb-4">
+                  {cartItems.map((i) => (
+                    <div key={i.product.product_id} className="flex items-center justify-between gap-3 text-sm">
+                      <div className="flex-1">{i.product.part_number} — {i.product.description}</div>
+                      <Input type="number" min="0" value={i.qty} onChange={(e) => setQty(i.product.product_id, parseInt(e.target.value || 0, 10))} className="w-20" />
+                      <div className="w-24 text-right font-mono tabular">${money(i.qty * i.product.price)}</div>
+                      <Button variant="ghost" size="icon" onClick={() => setQty(i.product.product_id, 0)}><Trash size={16} /></Button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between border-t border-border pt-3">
+                  <div className="font-mono text-lg">${money(cartTotal)}</div>
+                  <Button onClick={placeOrder} disabled={placingOrder} data-testid="portal-place-order">{placingOrder ? "Placing…" : "Place Order"}</Button>
+                </div>
+              </Card>
+            )}
+          </TabsContent>
 
           <TabsContent value="invoices" className="mt-5">
             <Card className="bg-white border-border/60 shadow-sm rounded-xl overflow-hidden">

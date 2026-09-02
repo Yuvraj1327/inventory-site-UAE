@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   SquaresFour, Receipt, Package, UsersThree, Truck, Scan, Sparkle, Wallet,
-  BellRinging, Cube, ShoppingCart, FileText, SignOut,
+  BellRinging, Cube, ShoppingCart, FileText, SignOut, TrendDown, ChartLineUp,
 } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
@@ -9,10 +9,12 @@ import { useAuth } from "@/context/AuthContext";
 const nav = [
   { to: "/", label: "Dashboard", icon: SquaresFour, end: true, id: "dashboard" },
   { to: "/transactions", label: "Transactions", icon: Receipt, id: "transactions" },
-  { to: "/orders", label: "Orders", icon: Package, id: "orders" },
+  { to: "/orders", label: "Orders Follow-Up", icon: Package, id: "orders" },
   { to: "/inventory", label: "Inventory", icon: Cube, id: "inventory" },
   { to: "/purchases", label: "Purchases", icon: ShoppingCart, id: "purchases" },
   { to: "/invoices", label: "Invoices", icon: FileText, id: "invoices" },
+  { to: "/lost-sales", label: "Lost Sales", icon: TrendDown, id: "lost-sales" },
+  { to: "/supplier-monitoring", label: "Supplier Monitoring", icon: ChartLineUp, id: "supplier-monitoring" },
   { to: "/customers", label: "Customers", icon: UsersThree, id: "customers" },
   { to: "/suppliers", label: "Suppliers", icon: Truck, id: "suppliers" },
   { to: "/reminders", label: "Payment Reminders", icon: BellRinging, id: "reminders" },

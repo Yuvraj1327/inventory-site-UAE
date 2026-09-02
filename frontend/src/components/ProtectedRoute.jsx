@@ -7,8 +7,9 @@ export default function ProtectedRoute({ role, children }) {
     return <div className="min-h-screen flex items-center justify-center text-muted-foreground">Loading…</div>;
   }
   if (!user) return <Navigate to="/login" replace />;
-  if (role && user.role !== role) {
-    return <Navigate to={user.role === "admin" ? "/" : "/portal"} replace />;
+  const allowed = Array.isArray(role) ? role : role ? [role] : null;
+  if (allowed && !allowed.includes(user.role)) {
+    return <Navigate to={user.role === "customer" ? "/portal" : "/"} replace />;
   }
   return children;
 }

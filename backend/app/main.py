@@ -5,9 +5,11 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.supabase_client import get_service_client
+from app.core.rate_limit import RateLimitMiddleware
 from app.routers import (
-    auth, admin_users, parties, products, orders, purchases,
+    auth, admin_users, parties, products, orders, order_lines, purchases,
     invoices, transactions, dashboard, reminders, portal, ai_stub,
+    lost_sales, supplier_monitoring, ai_agent, traffic, accounting, payments,
 )
 
 app = FastAPI(title="Ledgerly ERP API")
@@ -18,6 +20,7 @@ app.include_router(admin_users.staff_router)
 app.include_router(parties.router)
 app.include_router(products.router)
 app.include_router(orders.router)
+app.include_router(order_lines.router)
 app.include_router(purchases.router)
 app.include_router(invoices.router)
 app.include_router(transactions.router)
@@ -25,6 +28,12 @@ app.include_router(dashboard.router)
 app.include_router(reminders.router)
 app.include_router(portal.router)
 app.include_router(ai_stub.router)
+app.include_router(lost_sales.router)
+app.include_router(supplier_monitoring.router)
+app.include_router(ai_agent.router)
+app.include_router(traffic.router)
+app.include_router(accounting.router)
+app.include_router(payments.router)
 
 
 @app.get("/api/")
@@ -72,6 +81,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RateLimitMiddleware)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -103,3 +113,13 @@ async def startup():
         )
     else:
         logger.info("Supabase configuration detected.")
+
+    if settings.CORS_ORIGINS.strip() == "*":
+        logger.warning(
+            "CORS_ORIGINS is '*' (allow all origins). Fine for local development; "
+            "set it to your actual frontend URL(s) before deploying to production."
+        )
+    if not settings.SUPPLIER_MOCK_PROVIDER:
+        logger.info("Supplier AI Agent: no automated check provider configured (expected until Phase 8's real integration is set up).")
+    if not (settings.WHATSAPP_PROVIDER_API_KEY and settings.WHATSAPP_PROVIDER_URL):
+        logger.info("WhatsApp receipts: no provider configured — receipts will be created with whatsapp_status='not_applicable'.")

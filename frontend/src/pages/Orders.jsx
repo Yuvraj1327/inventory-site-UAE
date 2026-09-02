@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, money, fmtDate } from "@/lib/api";
+import { api, money, fmtDate, formatApiError } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,10 @@ import {
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Package, Trash, PencilSimple, CheckCircle, Warning, DownloadSimple } from "@phosphor-icons/react";
+import {
+  Plus, Package, Trash, PencilSimple, CheckCircle, Warning, DownloadSimple,
+  ListNumbers, LockSimple, LockSimpleOpen, ArrowsClockwise,
+} from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const OVERDUE_DAYS = 7;
@@ -100,15 +103,81 @@ export default function Orders() {
   const [form, setForm] = useState(empty);
   const [editId, setEditId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [showClosed, setShowClosed] = useState(false);
+  const [carrying, setCarrying] = useState(false);
+  const [linesOpen, setLinesOpen] = useState(false);
+  const [linesOrder, setLinesOrder] = useState(null);
+  const [lines, setLines] = useState([]);
+  const [lineForm, setLineForm] = useState({ part_number: "", order_qty: "" });
+  const [addingLine, setAddingLine] = useState(false);
 
-  const load = () => api.get("/orders").then((r) => setRows(r.data));
+  const load = () => {
+    const url = showClosed ? "/orders/closed" : "/orders";
+    api.get(url).then((r) => setRows(r.data));
+  };
   useEffect(() => {
     load();
     api.get("/parties?kind=customer").then((r) => setCustomers(r.data));
     api.get("/parties?kind=supplier").then((r) => setSuppliers(r.data));
-  }, []);
+  }, [showClosed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const overdue = rows.filter(isOverdue);
+
+  const runCarryForward = async () => {
+    setCarrying(true);
+    try {
+      const r = await api.post("/orders/carry-forward");
+      toast.success(`Carried forward ${r.data.carried_forward} order(s) into this month`);
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    setCarrying(false);
+  };
+
+  const closeOrder = async (o) => {
+    try {
+      await api.post(`/orders/${o._id}/close`);
+      toast.success(`Order ${o.order_number} closed`);
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+  };
+  const reopenOrder = async (o) => {
+    try {
+      await api.post(`/orders/${o._id}/reopen`);
+      toast.success(`Order ${o.order_number} reopened`);
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+  };
+
+  const openLines = async (o) => {
+    setLinesOrder(o);
+    setLineForm({ part_number: "", order_qty: "" });
+    setLinesOpen(true);
+    const r = await api.get(`/orders/${o._id}/lines`);
+    setLines(r.data);
+  };
+  const addLine = async () => {
+    if (!lineForm.part_number || !lineForm.order_qty) { toast.error("Part number and Order Qty are required"); return; }
+    setAddingLine(true);
+    try {
+      await api.post(`/orders/${linesOrder._id}/lines`, { part_number: lineForm.part_number, order_qty: num(lineForm.order_qty) });
+      setLineForm({ part_number: "", order_qty: "" });
+      const r = await api.get(`/orders/${linesOrder._id}/lines`);
+      setLines(r.data);
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    setAddingLine(false);
+  };
+  const updateLine = async (line, patch) => {
+    try {
+      await api.put(`/orders/${linesOrder._id}/lines/${line._id}`, patch);
+      const r = await api.get(`/orders/${linesOrder._id}/lines`);
+      setLines(r.data);
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+  };
+  const removeLine = async (line) => {
+    await api.delete(`/orders/${linesOrder._id}/lines/${line._id}`);
+    const r = await api.get(`/orders/${linesOrder._id}/lines`);
+    setLines(r.data);
+  };
 
   const payloadFrom = (f) => {
     const sale = num(f.selling_value) + num(f.selling_vat);
@@ -250,10 +319,16 @@ export default function Orders() {
       <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
           <div className="text-xs uppercase tracking-[0.2em] font-semibold text-muted-foreground">Order Tracking</div>
-          <h1 className="text-4xl sm:text-5xl tracking-tight font-light mt-1" style={{ fontFamily: "Manrope" }}>Orders</h1>
+          <h1 className="text-4xl sm:text-5xl tracking-tight font-light mt-1" style={{ fontFamily: "Manrope" }}>Orders Follow-Up</h1>
           <p className="text-muted-foreground mt-2 text-sm">Full order follow-up. Scroll sideways to see every field. Click Payments to edit inline.</p>
         </div>
         <div className="flex items-center gap-2">
+        <Button variant={showClosed ? "default" : "secondary"} onClick={() => setShowClosed((s) => !s)} data-testid="toggle-closed-btn" className="rounded-full gap-2">
+          {showClosed ? <LockSimple size={16} weight="duotone" /> : <LockSimpleOpen size={16} weight="duotone" />} {showClosed ? "Closed Orders" : "Active Orders"}
+        </Button>
+        <Button variant="secondary" onClick={runCarryForward} disabled={carrying} data-testid="carry-forward-btn" className="rounded-full gap-2">
+          <ArrowsClockwise size={16} weight="duotone" className={carrying ? "animate-spin" : ""} /> Carry Forward
+        </Button>
         <Button variant="secondary" onClick={exportCsv} data-testid="export-csv-btn" className="rounded-full gap-2">
           <DownloadSimple size={18} weight="duotone" /> Export CSV
         </Button>
@@ -291,15 +366,19 @@ export default function Orders() {
               </div>
             </div>
 
-            <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground pt-2">Status Checklist</div>
-            <div className="grid grid-cols-2 gap-3">
-              {Chk("pricing_status", "Pricing done")}
-              {Chk("pi_status", "PI done")}
-              {Chk("supplier_pkl", "Supplier PKL")}
-              {Chk("customer_pkl", "Customer PKL")}
-              {Chk("delivery_status", "Delivered")}
-              {Txt("delivery_note", "Delivery Note")}
-            </div>
+            {editId && (
+              <>
+                <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground pt-2">Status Checklist</div>
+                <div className="grid grid-cols-2 gap-3">
+                  {Chk("pricing_status", "Pricing done")}
+                  {Chk("pi_status", "PI done")}
+                  {Chk("supplier_pkl", "Supplier PKL")}
+                  {Chk("customer_pkl", "Customer PKL")}
+                  {Chk("delivery_status", "Delivered")}
+                  {Txt("delivery_note", "Delivery Note")}
+                </div>
+              </>
+            )}
 
             <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground pt-2">Financials (VAT auto 5%)</div>
             <div className="grid grid-cols-2 gap-3">
@@ -364,7 +443,7 @@ export default function Orders() {
         {rows.length === 0 ? (
           <div className="py-20 flex flex-col items-center gap-3 text-muted-foreground">
             <Package size={40} weight="duotone" />
-            <p className="text-sm">No orders yet.</p>
+            <p className="text-sm">{showClosed ? "No closed orders yet." : "No active orders yet."}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -391,6 +470,7 @@ export default function Orders() {
                   <TableHead>Cust. PKL</TableHead>
                   <TableHead>Delivery</TableHead>
                   <TableHead>Del. Note</TableHead>
+                  <TableHead className="text-center">Closed</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
@@ -434,8 +514,23 @@ export default function Orders() {
                       <TableCell><Check value={o.customer_pkl} /></TableCell>
                       <TableCell><Check value={o.delivery_status} /></TableCell>
                       <TableCell className="whitespace-nowrap max-w-[140px] truncate" title={o.delivery_note}>{o.delivery_note || "—"}</TableCell>
+                      <TableCell className="text-center">
+                        {o.status === "closed" ? (
+                          <button onClick={() => reopenOrder(o)} data-testid={`reopen-order-${o._id}`}
+                            title="Reopen order" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors">
+                            <LockSimple size={16} weight="fill" /> Closed
+                          </button>
+                        ) : (
+                          <button onClick={() => closeOrder(o)} data-testid={`close-order-${o._id}`}
+                            title="Close order" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-success transition-colors">
+                            <LockSimpleOpen size={16} /> Close
+                          </button>
+                        )}
+                      </TableCell>
                       <TableCell className="whitespace-nowrap">
                         <div className="flex items-center gap-2">
+                          <button onClick={() => openLines(o)} data-testid={`lines-order-${o._id}`}
+                            title="Order lines" className="text-muted-foreground hover:text-primary transition-colors"><ListNumbers size={16} /></button>
                           <button onClick={() => openEdit(o)} data-testid={`edit-order-${o._id}`}
                             className="text-muted-foreground hover:text-primary transition-colors"><PencilSimple size={16} /></button>
                           <button onClick={() => remove(o._id)} data-testid={`del-order-${o._id}`}
@@ -450,6 +545,77 @@ export default function Orders() {
           </div>
         )}
       </Card>
+
+      <Dialog open={linesOpen} onOpenChange={setLinesOpen}>
+        <DialogContent className="bg-white max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle style={{ fontFamily: "Manrope" }}>Order Lines — {linesOrder?.order_number}</DialogTitle></DialogHeader>
+
+          <div className="flex items-end gap-3 bg-muted/40 rounded-lg p-3">
+            <div className="flex-1">
+              <Label className="text-xs">Part Number</Label>
+              <Input value={lineForm.part_number} onChange={(e) => setLineForm({ ...lineForm, part_number: e.target.value })} className="bg-white" data-testid="line-part-input" />
+            </div>
+            <div className="w-32">
+              <Label className="text-xs">Order Qty</Label>
+              <Input type="number" value={lineForm.order_qty} onChange={(e) => setLineForm({ ...lineForm, order_qty: e.target.value })} className="bg-white" data-testid="line-qty-input" />
+            </div>
+            <Button onClick={addLine} disabled={addingLine} data-testid="add-line-btn">{addingLine ? "Adding…" : "Add Line"}</Button>
+          </div>
+          <p className="text-xs text-muted-foreground">Description, brand, availability and your customer's price are filled in automatically from the part number.</p>
+
+          {lines.length === 0 ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">No lines yet.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table className="text-xs">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>#</TableHead><TableHead>Part Number</TableHead><TableHead>Description</TableHead>
+                    <TableHead className="text-right">Order Qty</TableHead><TableHead className="text-right">Confirm Qty</TableHead>
+                    <TableHead className="text-right">Cancelled Qty</TableHead><TableHead className="text-right">Shipped Qty</TableHead>
+                    <TableHead className="text-right">Unit Price</TableHead><TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Status</TableHead><TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {lines.map((li) => (
+                    <TableRow key={li._id}>
+                      <TableCell>{li.line_no}</TableCell>
+                      <TableCell className="font-mono">{li.part_number}</TableCell>
+                      <TableCell className="max-w-[160px] truncate" title={li.description}>{li.description || "—"}</TableCell>
+                      <TableCell className="text-right">{li.order_qty}</TableCell>
+                      <TableCell className="text-right">
+                        <Input type="number" defaultValue={li.confirm_qty} className="w-16 h-7 text-right"
+                          onBlur={(e) => num(e.target.value) !== li.confirm_qty && updateLine(li, { confirm_qty: num(e.target.value) })} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Input type="number" defaultValue={li.cancelled_qty} className="w-16 h-7 text-right"
+                          onBlur={(e) => num(e.target.value) !== li.cancelled_qty && updateLine(li, { cancelled_qty: num(e.target.value) })} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Input type="number" defaultValue={li.shipped_qty} className="w-16 h-7 text-right"
+                          onBlur={(e) => num(e.target.value) !== li.shipped_qty && updateLine(li, { shipped_qty: num(e.target.value) })} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Input type="number" defaultValue={li.unit_selling_price} className="w-20 h-7 text-right"
+                          onBlur={(e) => num(e.target.value) !== li.unit_selling_price && updateLine(li, { unit_selling_price: num(e.target.value) })} />
+                      </TableCell>
+                      <TableCell className="text-right font-mono tabular">{money(li.amount)}</TableCell>
+                      <TableCell><Badge variant="outline">{li.status}</Badge></TableCell>
+                      <TableCell>
+                        <button onClick={() => removeLine(li)} className="text-muted-foreground hover:text-destructive transition-colors"><Trash size={14} /></button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLinesOpen(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
