@@ -9,6 +9,7 @@ import { motion } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: SquaresFour, end: true, id: "dashboard" },
@@ -135,7 +136,9 @@ export default function Layout() {
           transition={{ duration: 0.25, ease: "easeOut" }}
           className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 min-w-0"
         >
-          <Outlet />
+          <ErrorBoundary resetKey={loc.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </motion.main>
       </div>
     </div>

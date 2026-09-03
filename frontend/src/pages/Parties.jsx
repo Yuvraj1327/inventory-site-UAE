@@ -17,7 +17,6 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Trash, FileText, UsersThree, Truck, FilePdf, Key } from "@phosphor-icons/react";
 import { toast } from "sonner";
-import { Country, City } from "country-state-city";
 
 const BRANDS = [
   "Toyota", "Lexus", "Honda", "Nissan", "Mitsubishi", "Mazda", "Suzuki", "Isuzu", "Subaru",
@@ -48,6 +47,12 @@ export default function Parties({ kind }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [countryCode, setCountryCode] = useState("");
+  // country-state-city ships ~17MB of worldwide location data — load it
+  // as its own chunk in the background instead of bundling it into this
+  // page's initial JS, so the page itself opens fast. The dropdowns are
+  // simply empty for the brief moment before it resolves.
+  const [geo, setGeo] = useState(null);
+  useEffect(() => { import("country-state-city").then((m) => setGeo(m)); }, []);
   const [soa, setSoa] = useState(null);
   const [soaOpen, setSoaOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -62,8 +67,8 @@ export default function Parties({ kind }) {
     setSupPur(r.data); setPurFor(name); setPurOpen(true);
   };
 
-  const countries = useMemo(() => Country.getAllCountries(), []);
-  const cities = useMemo(() => (countryCode ? City.getCitiesOfCountry(countryCode) : []).slice(0, 1000), [countryCode]);
+  const countries = useMemo(() => (geo ? geo.Country.getAllCountries() : []), [geo]);
+  const cities = useMemo(() => (geo && countryCode ? geo.City.getCitiesOfCountry(countryCode) : []).slice(0, 1000), [geo, countryCode]);
   const lpoPreview = useMemo(() => makeLpo(form.name, form.mobile || form.phone), [form.name, form.mobile, form.phone]);
 
   const onCountry = (code) => {
