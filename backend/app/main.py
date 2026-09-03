@@ -56,6 +56,7 @@ async def health_supabase():
         "service_role_can_read_profiles": False,
         "profiles_table_exists": False,
         "admin_profile_found": False,
+        "gemini_configured": bool(settings.GEMINI_API_KEY),
         "error": None,
     }
     try:
@@ -123,3 +124,7 @@ async def startup():
         logger.info("Supplier AI Agent: no automated check provider configured (expected until Phase 8's real integration is set up).")
     if not (settings.WHATSAPP_PROVIDER_API_KEY and settings.WHATSAPP_PROVIDER_URL):
         logger.info("WhatsApp receipts: no provider configured — receipts will be created with whatsapp_status='not_applicable'.")
+    if settings.GEMINI_API_KEY:
+        logger.info("Gemini configured — Receipt Scanner and AI Assistant are active.")
+    else:
+        logger.info("Gemini not configured (GEMINI_API_KEY unset) — Receipt Scanner and AI Assistant will report 'not configured' until it's set.")

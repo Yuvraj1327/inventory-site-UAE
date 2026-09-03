@@ -72,7 +72,7 @@ export default function Portal() {
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center"><Wallet size={20} weight="duotone" /></div>
             <div>
-              <div className="font-semibold text-[15px]" style={{ fontFamily: "Manrope" }}>Ledgerly</div>
+              <div className="font-semibold text-[15px]" style={{ fontFamily: "Manrope" }}>Al Rigga Auto</div>
               <div className="text-xs text-muted-foreground">Customer Portal</div>
             </div>
           </div>

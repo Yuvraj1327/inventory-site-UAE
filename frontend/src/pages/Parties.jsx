@@ -136,7 +136,7 @@ export default function Parties({ kind }) {
         .foot { margin-top:48px; font-size:11px; color:#78766F; }
       </style></head><body>
       <div class="top">
-        <div><div class="brand">Ledgerly · AI Accountant</div><h1>Statement of Account</h1></div>
+        <div><div class="brand">Al Rigga Auto · Automotive ERP</div><h1>Statement of Account</h1></div>
         <div style="text-align:right"><div class="label">Balance Due</div><div class="big">$${money(soa.balance)}</div></div>
       </div>
       <div class="name">${soa.name} <span class="label">(${soa.kind})</span></div>

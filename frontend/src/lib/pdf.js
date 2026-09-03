@@ -32,7 +32,7 @@ const openPrint = (html) => {
 export function printReceipt(txn) {
   const body = `
     <div class="top">
-      <div><div class="brand">Ledgerly · AI Accountant</div><h1>Receipt ${txn.receipt_no || ""}</h1></div>
+      <div><div class="brand">Al Rigga Auto · Automotive ERP</div><h1>Receipt ${txn.receipt_no || ""}</h1></div>
       <div style="text-align:right"><div class="label">Amount</div><div class="big">$${money(txn.amount)}</div></div>
     </div>
     <div class="name">Received from: ${txn.party || "—"}</div>
@@ -58,7 +58,7 @@ export function printInvoice(inv) {
   }).join("");
   const body = `
     <div class="top">
-      <div><div class="brand">Ledgerly · AI Accountant</div><h1>Tax Invoice / فاتورة ضريبية</h1></div>
+      <div><div class="brand">Al Rigga Auto · Automotive ERP</div><h1>Tax Invoice / فاتورة ضريبية</h1></div>
       <div style="text-align:right"><div class="label">Status</div><div class="big" style="text-transform:capitalize">${inv.status || ""}</div></div>
     </div>
     <div class="name">Billed to / العميل: ${inv.customer || "—"}</div>
@@ -88,7 +88,7 @@ export function _printInvoiceOld(inv) {
     <td class="num">$${money((i.qty || 0) * (i.unit_price || 0))}</td></tr>`).join("");
   const body = `
     <div class="top">
-      <div><div class="brand">Ledgerly · AI Accountant</div><h1>Invoice ${inv.invoice_number || ""}</h1></div>
+      <div><div class="brand">Al Rigga Auto · Automotive ERP</div><h1>Invoice ${inv.invoice_number || ""}</h1></div>
       <div style="text-align:right"><div class="label">Status</div><div class="big" style="text-transform:capitalize">${inv.status || ""}</div></div>
     </div>
     <div class="name">Billed to: ${inv.customer || "—"}</div>
@@ -112,7 +112,7 @@ export function printSoa(soa) {
     <td class="num">$${money(r.billed)}</td><td class="num">$${money(r.paid)}</td><td class="num">$${money(r.balance)}</td></tr>`).join("");
   const body = `
     <div class="top">
-      <div><div class="brand">Ledgerly · AI Accountant</div><h1>Statement of Account</h1></div>
+      <div><div class="brand">Al Rigga Auto · Automotive ERP</div><h1>Statement of Account</h1></div>
       <div style="text-align:right"><div class="label">Balance Due</div><div class="big">$${money(soa.balance)}</div></div>
     </div>
     <div class="name">${soa.name} <span class="label">(${soa.kind})</span></div>

@@ -1,27 +1,28 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { api, formatApiError } from "@/lib/api";
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
+// TEMPORARY: set to false once /accounting and the loading-state issue are
+// both confirmed fixed in the browser. Logs every auth state transition so
+// a stuck "Loading…" screen can be traced to the exact step it stalls at.
+const AUTH_DEBUG = true;
+const alog = (...args) => { if (AUTH_DEBUG) console.log("[AuthContext]", ...args); };
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(undefined); // undefined=loading, null=guest, obj=profile
 
-  // Tracks which access token we last fetched a profile for. Supabase's
-  // onAuthStateChange fires its own SIGNED_IN event as a side effect of
-  // signInWithPassword() — without this guard, login() would fetch the
-  // profile directly *and* the subscription below would fetch it again
-  // for the same token, doubling every /auth/me call.
-  const lastTokenRef = useRef(null);
-
-  const loadProfile = useCallback(async (token, { throwOnError = false } = {}) => {
-    lastTokenRef.current = token ?? null;
+  const loadProfile = useCallback(async ({ throwOnError = false } = {}) => {
+    alog("loadProfile: calling GET /auth/me");
     try {
       const { data } = await api.get("/auth/me");
+      alog("loadProfile: success, setting user ->", data);
       setUser(data);
       return data;
     } catch (e) {
+      alog("loadProfile: failed ->", e?.message, e?.response?.status);
       setUser(null);
       if (throwOnError) throw e;
       return null;
@@ -29,30 +30,49 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    let mounted = true;
+    let cancelled = false;
+    alog("effect: subscribing to onAuthStateChange");
 
-    // onAuthStateChange alone is the source of truth: Supabase fires it
+    // onAuthStateChange is the single source of truth: Supabase fires it
     // immediately on subscribe with the current session (event
-    // "INITIAL_SESSION"), so a separate getSession() call up front is
-    // redundant and was the other source of duplicate /auth/me requests.
+    // "INITIAL_SESSION"), so there's no need for a separate getSession()
+    // call up front — that was a source of duplicate /auth/me requests.
+    //
+    // Deliberately simple: every event that carries a session re-fetches
+    // the profile (including TOKEN_REFRESHED, which fires automatically
+    // every ~10 minutes and on tab focus). That's a few more /auth/me
+    // calls over a long session than a token-based dedup would produce,
+    // but it removes an entire class of "did the dedup key get out of
+    // sync" bugs in favor of a flow that's easy to reason about.
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!mounted) return;
-      if (!session) { lastTokenRef.current = null; setUser(null); return; }
-      if (session.access_token === lastTokenRef.current) return; // already loaded for this token
-      loadProfile(session.access_token);
+      alog("onAuthStateChange fired: event=", event, "hasSession=", !!session);
+      if (cancelled) {
+        alog("onAuthStateChange: effect already cleaned up, ignoring");
+        return;
+      }
+      if (!session) {
+        alog("onAuthStateChange: no session -> user = null (guest)");
+        setUser(null);
+        return;
+      }
+      alog("onAuthStateChange: session present -> loading profile");
+      loadProfile();
     });
 
     return () => {
-      mounted = false;
+      alog("effect cleanup: unsubscribing");
+      cancelled = true;
       sub?.subscription?.unsubscribe();
     };
   }, [loadProfile]);
 
   const login = useCallback(async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { ok: false, error: error.message };
+    alog("login: signing in", email);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) { alog("login: signInWithPassword failed ->", error.message); return { ok: false, error: error.message }; }
     try {
-      const profile = await loadProfile(data.session?.access_token, { throwOnError: true });
+      const profile = await loadProfile({ throwOnError: true });
+      alog("login: profile loaded ->", profile);
       return { ok: true, user: profile };
     } catch (e) {
       // Distinguish "request never got a response" (network/CORS/backend
@@ -71,11 +91,13 @@ export function AuthProvider({ children }) {
   }, [loadProfile]);
 
   const logout = useCallback(async () => {
+    alog("logout");
     await supabase.auth.signOut();
-    lastTokenRef.current = null;
     setUser(null);
     window.location.href = "/login";
   }, []);
+
+  useEffect(() => { alog("render: user state is now", user === undefined ? "undefined (loading)" : user); }, [user]);
 
   // Memoized so consumers of useAuth() only re-render when user/login/logout
   // actually change identity, not on every AuthProvider render.

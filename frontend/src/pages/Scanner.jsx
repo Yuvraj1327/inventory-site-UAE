@@ -52,7 +52,7 @@ export default function Scanner() {
       <div>
         <div className="text-xs uppercase tracking-[0.2em] font-semibold text-muted-foreground">AI Extraction</div>
         <h1 className="text-4xl sm:text-5xl tracking-tight font-light mt-1" style={{ fontFamily: "Manrope" }}>Receipt Scanner</h1>
-        <p className="text-muted-foreground mt-2 text-sm max-w-lg">Upload a photo of a receipt or invoice — GPT-5.4 reads it and extracts the vendor, total, tax and line items.</p>
+        <p className="text-muted-foreground mt-2 text-sm max-w-lg">Upload a photo of a receipt or invoice — Gemini Vision reads it and extracts the vendor, invoice number, date, totals, tax and line items.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -92,24 +92,43 @@ export default function Scanner() {
             </div>
           ) : (
             <div className="space-y-4">
+              {result.ok === false && result.message && (
+                <div className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+                  {result.message}
+                </div>
+              )}
               <Field label="Vendor" value={result.vendor || "—"} />
               <div className="grid grid-cols-2 gap-4">
+                <Field label="Invoice #" value={result.invoice_reference || "—"} />
                 <Field label="Date" value={result.date || "—"} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <Field label="Category" value={result.category || "—"} />
+                <Field label="Currency" value={result.currency || "—"} />
               </div>
               <div className="grid grid-cols-3 gap-4">
-                <Field label="Tax" value={`$${money(result.tax)}`} mono />
-                <Field label="Currency" value={result.currency || "USD"} />
-                <Field label="Total" value={`$${money(result.total)}`} mono strong />
+                <Field label="Subtotal" value={result.subtotal != null ? `${result.currency || ""}${money(result.subtotal)}` : "—"} mono />
+                <Field label="Tax / VAT" value={result.tax != null ? `${result.currency || ""}${money(result.tax)}` : "—"} mono />
+                <Field label="Total" value={result.total != null ? `${result.currency || ""}${money(result.total)}` : "—"} mono strong />
               </div>
               {Array.isArray(result.line_items) && result.line_items.length > 0 && (
                 <div>
                   <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground mb-2">Line Items</div>
                   <div className="space-y-1.5">
                     {result.line_items.map((li, i) => (
-                      <div key={i} className="flex justify-between text-sm border-b border-border/60 pb-1.5">
-                        <span>{li.description}</span>
-                        <span className="font-mono tabular">${money(li.amount)}</span>
+                      <div key={i} className="border-b border-border/60 pb-1.5">
+                        <div className="flex justify-between text-sm">
+                          <span>{li.description || "—"}</span>
+                          <span className="font-mono tabular">{li.amount != null ? `${result.currency || ""}${money(li.amount)}` : "—"}</span>
+                        </div>
+                        {(li.part_number || li.quantity) && (
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {li.part_number && <span>SKU: {li.part_number}</span>}
+                            {li.part_number && li.quantity && <span className="mx-1">·</span>}
+                            {li.quantity && <span>Qty: {li.quantity}</span>}
+                            {li.unit_cost != null && <span className="ml-1">@ {result.currency || ""}{money(li.unit_cost)}</span>}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

@@ -1,9 +1,22 @@
+import logging
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+logger = logging.getLogger(__name__)
+
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
-load_dotenv(ROOT_DIR / ".env")
+_ENV_PATH = ROOT_DIR / ".env"
+# override=True: an .env file at the project root is meant to be the
+# authoritative source for these settings. Without this, python-dotenv
+# silently skips any variable that already exists in the process
+# environment (e.g. a stale empty value from a shell export, a process
+# manager, or a container's base environment) — the .env file's real
+# value would never be picked up even though the file is correct, which
+# is exactly the shape of bug this caused for GEMINI_API_KEY.
+_env_loaded = load_dotenv(_ENV_PATH, override=True)
+if not _env_loaded:
+    logger.warning(".env not found at %s — all settings will fall back to defaults/empty.", _ENV_PATH)
 
 
 class Settings:
@@ -15,6 +28,9 @@ class Settings:
     SUPABASE_JWT_SECRET: str = os.environ.get("SUPABASE_JWT_SECRET", "")
     CORS_ORIGINS: str = os.environ.get("CORS_ORIGINS", "*")
     OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")  # optional, for later AI phases
+    # Google Gemini — powers the Receipt Scanner (image extraction) and the
+    # AI Assistant (chat). Server-side only; never sent to the frontend.
+    GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")
 
     # Phase 8 — Supplier AI Agent. Off by default; when off, automated
     # checks report "not configured" rather than inventing data.

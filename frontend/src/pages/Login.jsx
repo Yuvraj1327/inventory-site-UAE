@@ -35,8 +35,8 @@ export default function Login() {
             <Wallet size={24} weight="duotone" />
           </div>
           <div>
-            <div className="text-lg font-semibold" style={{ fontFamily: "Manrope" }}>Ledgerly</div>
-            <div className="text-xs text-muted-foreground">AI Accountant</div>
+            <div className="text-lg font-semibold" style={{ fontFamily: "Manrope" }}>Al Rigga Auto</div>
+            <div className="text-xs text-muted-foreground">Automotive ERP</div>
           </div>
         </div>
 
