@@ -6,6 +6,11 @@ import { AuthProvider } from "@/context/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Layout from "@/components/Layout";
 import ErrorBoundary from "@/components/ErrorBoundary";
+// Kept as a normal synchronous import rather than React.lazy(): this page
+// was the one route where lazy-loading was implicated in a hard-to-pin-down
+// runtime crash, and it isn't heavy enough (no large datasets, no charting
+// library) for splitting it into its own chunk to be worth that risk.
+import Accounting from "@/pages/Accounting";
 
 // Every page is its own chunk, fetched on first visit instead of all
 // upfront — this is what actually moves the needle on initial load time,
@@ -27,7 +32,6 @@ const LostSales = lazy(() => import("@/pages/LostSales"));
 const SupplierMonitoring = lazy(() => import("@/pages/SupplierMonitoring"));
 const AIAgentControlCenter = lazy(() => import("@/pages/AIAgentControlCenter"));
 const CustomerIntelligence = lazy(() => import("@/pages/CustomerIntelligence"));
-const Accounting = lazy(() => import("@/pages/Accounting"));
 
 function PageFallback() {
   return (
@@ -36,9 +40,6 @@ function PageFallback() {
     </div>
   );
 }
-
-// Gives ErrorBoundary a fresh key per route, so a crash on one page
-// doesn't permanently wedge navigation to every other page.
 
 function App() {
   return (
