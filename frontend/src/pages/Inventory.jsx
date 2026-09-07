@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, money } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,13 +10,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Cube, Trash, PencilSimple, WarningCircle, ShoppingCart, UploadSimple } from "@phosphor-icons/react";
+import { Plus, Cube, Trash, PencilSimple, WarningCircle, ShoppingCart, UploadSimple, Database } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const empty = { name: "", sku: "", stock: "", unit_cost: "", unit_price: "", low_stock_threshold: "5" };
 const num = (v) => parseFloat(v || 0) || 0;
 
 export default function Inventory() {
+  const navigate = useNavigate();
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
@@ -117,6 +119,9 @@ export default function Inventory() {
           <h1 className="text-4xl sm:text-5xl tracking-tight font-light mt-1" style={{ fontFamily: "Manrope" }}>Inventory</h1>
         </div>
         <div className="flex items-center gap-2">
+        <Button variant="secondary" onClick={() => navigate("/inventory/import")} data-testid="import-products-nav-btn" className="rounded-full gap-2">
+          <Database size={18} weight="duotone" /> Import Products
+        </Button>
         <input ref={uploadRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" data-testid="product-upload-input" onChange={(e) => doUpload(e.target.files[0])} />
         <Button variant="secondary" onClick={() => uploadRef.current?.click()} data-testid="upload-products-btn" className="rounded-full gap-2">
           <UploadSimple size={18} weight="duotone" /> Upload CSV

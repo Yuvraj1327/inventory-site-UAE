@@ -305,3 +305,4 @@ def get_extraction_provider() -> InvoiceExtractionProvider:
     if settings.OPENAI_API_KEY:
         return OpenAIExtractionProvider(settings.OPENAI_API_KEY)
     return NotConfiguredProvider()
+

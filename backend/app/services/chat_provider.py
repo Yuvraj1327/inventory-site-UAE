@@ -197,3 +197,4 @@ def get_chat_provider() -> ChatProvider:
     if settings.GEMINI_API_KEY:
         return GeminiChatProvider(settings.GEMINI_API_KEY)
     return NotConfiguredChatProvider()
+
