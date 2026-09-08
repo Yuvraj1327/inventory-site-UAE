@@ -1,34 +1,14 @@
 // craco.config.js
-const fs = require("fs");
 const path = require("path");
-const dotenv = require("dotenv");
-
-// This file only needs ENABLE_HEALTH_CHECK, but it used to get it via
-// `require("dotenv").config()`, which writes all of .env into
-// process.env before CRA builds its own environment. Because dotenv
-// never overwrites a variable that is already set, that pinned .env
-// above every other file in CRA's chain
-// (.env.production.local > .env.local > .env.production > .env) — so
-// .env silently beat .env.production and a production build made on a
-// machine whose .env pointed at a local backend would ship that local
-// URL. Parsing into a local object instead keeps this file's own
-// settings working while leaving CRA's precedence intact.
-let fileEnv = {};
-try {
-  fileEnv = dotenv.parse(fs.readFileSync(path.resolve(__dirname, ".env")));
-} catch {
-  // No .env (e.g. a CI/Render build) — real environment variables and
-  // the committed .env.production supply everything needed.
-}
+require("dotenv").config();
 
 // Check if we're in development/preview mode (not production build)
 // Craco sets NODE_ENV=development for start, NODE_ENV=production for build
 const isDevServer = process.env.NODE_ENV !== "production";
 
-// Environment variable overrides. A real process env var still wins, so
-// `ENABLE_HEALTH_CHECK=true yarn start` behaves as before.
+// Environment variable overrides
 const config = {
-  enableHealthCheck: (process.env.ENABLE_HEALTH_CHECK ?? fileEnv.ENABLE_HEALTH_CHECK) === "true",
+  enableHealthCheck: process.env.ENABLE_HEALTH_CHECK === "true",
 };
 
 function makeDevServerV5Compatible(devServerConfig) {
