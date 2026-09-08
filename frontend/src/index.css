@@ -83,6 +83,59 @@ body {
     }
 }
 
+/* ---------- Landing page hero banner ----------
+   The banner photograph is much wider (≈2.67:1) than the hero box, so a
+   plain `object-position: center` would crop the two edges that carry the
+   most meaning. These breakpoints pan the crop instead: narrow viewports
+   sit slightly right of centre to hold the parts, skyline and UAE flag
+   together, and by desktop the hero is wide enough to show the whole
+   frame — warehouse, skyline, flag, parts and fleet. */
+.hero-banner-img {
+    object-position: 56% center;
+    /* The photograph is deliberately held back so the headline and CTAs
+       stay the loudest thing in the hero — it reads as a backdrop, not as
+       the subject. */
+    filter: brightness(0.62) saturate(0.85);
+}
+
+/* Single-layer readability scrim. Kept fully opaque behind the copy and
+   only easing off toward the far edge of the frame. On narrow screens the
+   copy sits at the bottom of the hero, so the scrim runs bottom-to-top. */
+.hero-banner-scrim {
+    background-image: linear-gradient(
+        to top,
+        hsl(24 12% 6% / 0.94) 0%,
+        hsl(24 12% 6% / 0.82) 42%,
+        hsl(24 12% 6% / 0.62) 72%,
+        hsl(24 12% 6% / 0.50) 100%
+    );
+}
+
+@media (min-width: 640px) {
+    .hero-banner-img {
+        object-position: 54% center;
+    }
+}
+
+/* From desktop the copy moves into the left column, so the scrim turns
+   horizontal: solid behind the text, then settling to a constant light
+   veil across the right of the frame rather than clearing completely, so
+   the skyline, flag and fleet stay legible but quiet. */
+@media (min-width: 1024px) {
+    .hero-banner-img {
+        object-position: center center;
+    }
+    .hero-banner-scrim {
+        background-image: linear-gradient(
+            to right,
+            hsl(24 12% 6% / 0.92) 0%,
+            hsl(24 12% 6% / 0.84) 28%,
+            hsl(24 12% 6% / 0.58) 48%,
+            hsl(24 12% 6% / 0.42) 62%
+        );
+    }
+}
+
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 8px; }

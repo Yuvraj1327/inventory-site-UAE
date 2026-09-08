@@ -104,17 +104,30 @@ export default function LandingPage() {
       </header>
 
       {/* ---------- HERO ---------- */}
+      {/* The supplied Dubai banner is the hero itself: full-bleed photograph
+          with the copy overlaid in the left column, so the right 55–65% of
+          the frame stays clear. Crop panning and the scrim direction are
+          handled by .hero-banner-img / .hero-banner-scrim in index.css. */}
       <div id="top" />
-      <Section className="pt-16 sm:pt-24 pb-12 sm:pb-16">
-        <div className="max-w-7xl mx-auto grid lg:grid-cols-5 gap-10 items-center">
-          <div className="lg:col-span-3">
-            <div className="inline-flex items-center gap-2 text-xs font-medium text-primary bg-primary/10 border border-primary/20 rounded-full px-3 py-1 mb-6">
+      <section className="relative isolate overflow-hidden border-b border-border" data-testid="hero">
+        <img
+          src="/images/hero-banner.jpg"
+          alt="Automotive spare parts — brake discs, filters, pads, batteries and belts — laid out in front of the Dubai skyline, alongside an Al Rigga Auto warehouse, the UAE flag and delivery vehicles"
+          className="hero-banner-img absolute inset-0 h-full w-full object-cover"
+          loading="eager"
+          fetchPriority="high"
+        />
+        <div className="hero-banner-scrim absolute inset-0" aria-hidden="true" />
+
+        <div className="relative max-w-7xl mx-auto px-5 sm:px-8 min-h-[540px] sm:min-h-[580px] lg:min-h-[640px] flex items-end lg:items-center py-14 sm:py-16 lg:py-20">
+          <div className="w-full lg:w-[52%] xl:w-[48%]">
+            <div className="inline-flex items-center gap-2 text-xs font-medium text-primary-foreground bg-primary border border-primary rounded-full px-3 py-1 mb-6">
               Wholesale B2B Automotive Spare Parts Supplier
             </div>
-            <h1 className="text-5xl lg:text-6xl font-bold tracking-tight leading-[1.08]" style={{ fontFamily: "Manrope" }}>
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.08] text-background" style={{ fontFamily: "Manrope" }}>
               Genuine automotive parts.<br /><span className="text-primary">Trusted supply</span>, at scale.
             </h1>
-            <p className="mt-6 text-base sm:text-lg text-muted-foreground max-w-xl leading-relaxed">
+            <p className="mt-6 text-base sm:text-lg text-background/85 max-w-xl leading-relaxed">
               Al Rigga Auto supplies dependable spare parts to trade buyers across the UAE and regional markets — built on genuine quality, competitive pricing, and over a decade of supplier relationships.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
@@ -122,37 +135,36 @@ export default function LandingPage() {
                 Customer Login <ArrowRight size={18} />
               </Button>
               <Button size="lg" variant="outline" onClick={() => window.location.href = "mailto:support@alriggaauto.com?subject=Business%20Account%20Request"}
-                data-testid="hero-request-access" className="h-12 px-6 text-base">
+                data-testid="hero-request-access"
+                className="h-12 px-6 text-base bg-background/10 border-background/40 text-background hover:bg-background hover:text-foreground">
                 Request Business Access
               </Button>
             </div>
           </div>
+        </div>
+      </section>
 
-          {/* Abstract graphic panel — deliberately not a stock/generated
-              car photo, since none was supplied and fabricating one would
-              misrepresent the company's actual imagery. */}
-          <div className="lg:col-span-2">
-            <Card className="p-8 shadow-card border-border/70 relative overflow-hidden">
-              <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-primary/5" />
-              <div className="absolute -left-8 -bottom-8 h-32 w-32 rounded-full border border-primary/20" />
-              <div className="relative space-y-5">
-                <div className="flex items-center gap-2 text-xs uppercase tracking-[0.14em] font-semibold text-muted-foreground">Live on the Customer Portal</div>
-                {[
-                  { label: "Part Number Search", icon: MagnifyingGlass },
-                  { label: "Customer-Specific Pricing", icon: ChartLineUp },
-                  { label: "Order Tracking", icon: Package },
-                  { label: "Invoices & Statements", icon: Receipt },
-                ].map((f) => (
-                  <div key={f.label} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
-                    <div className="h-9 w-9 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0"><f.icon size={17} weight="duotone" /></div>
-                    <span className="text-sm font-medium">{f.label}</span>
-                  </div>
-                ))}
+      {/* Portal capability strip — the same four items that previously sat in
+          the hero's side panel, moved directly below so the banner reads as
+          one uninterrupted image. */}
+      <div className="bg-card border-b border-border">
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 py-8 sm:py-10">
+          <div className="text-xs uppercase tracking-[0.14em] font-semibold text-muted-foreground mb-5">Live on the Customer Portal</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { label: "Part Number Search", icon: MagnifyingGlass },
+              { label: "Customer-Specific Pricing", icon: ChartLineUp },
+              { label: "Order Tracking", icon: Package },
+              { label: "Invoices & Statements", icon: Receipt },
+            ].map((f) => (
+              <div key={f.label} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-background">
+                <div className="h-9 w-9 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0"><f.icon size={17} weight="duotone" /></div>
+                <span className="text-sm font-medium">{f.label}</span>
               </div>
-            </Card>
+            ))}
           </div>
         </div>
-      </Section>
+      </div>
 
       {/* ---------- ABOUT ---------- */}
       <Section id="about" className="bg-card border-y border-border">
