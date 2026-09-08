@@ -319,7 +319,7 @@ export default function Orders() {
       <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
           <div className="text-xs uppercase tracking-[0.2em] font-semibold text-muted-foreground">Order Tracking</div>
-          <h1 className="text-4xl sm:text-5xl tracking-tight font-light mt-1" style={{ fontFamily: "Manrope" }}>Orders Follow-Up</h1>
+          <h1 className="text-5xl tracking-tight font-bold mt-1" style={{ fontFamily: "Manrope" }}>Orders Follow-Up</h1>
           <p className="text-muted-foreground mt-2 text-sm">Full order follow-up. Scroll sideways to see every field. Click Payments to edit inline.</p>
         </div>
         <div className="flex items-center gap-2">

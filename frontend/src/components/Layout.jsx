@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
-  SquaresFour, Receipt, Package, UsersThree, Truck, Scan, Sparkle, Wallet,
+  SquaresFour, Receipt, Package, UsersThree, Truck, Scan, Sparkle,
   BellRinging, Cube, ShoppingCart, FileText, SignOut, TrendDown, ChartLineUp,
   Robot, ChartBar, Calculator, List, CaretLeft, MagnifyingGlass, CaretDown,
 } from "@phosphor-icons/react";
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import alRiggaLogo from "@/assets/al-rigga-icon.png";
 
 // Grouped per the ERP's actual modules — collapsed to icon-only on desktop,
 // full labels in the mobile drawer where width isn't at a premium.
@@ -48,12 +49,10 @@ const ALL_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
 function Brand({ collapsed }) {
   return (
     <div className={`flex items-center gap-2.5 shrink-0 ${collapsed ? "justify-center" : ""}`}>
-      <div className="h-9 w-9 shrink-0 rounded-lg bg-primary text-primary-foreground flex items-center justify-center">
-        <Wallet size={18} weight="duotone" />
-      </div>
+      <img src={alRiggaLogo} alt="Al Rigga Auto" className="h-8 w-auto object-contain shrink-0" />
       {!collapsed && (
         <div className="leading-tight min-w-0">
-          <div className="font-semibold text-[14px] truncate tracking-tight" style={{ fontFamily: "Manrope" }}>Al Rigga Auto</div>
+          <div className="font-bold text-base truncate tracking-tight" style={{ fontFamily: "Manrope" }}>Al Rigga Auto</div>
           <div className="text-[11px] text-muted-foreground truncate">Automotive ERP</div>
         </div>
       )}
@@ -165,7 +164,7 @@ export default function Layout() {
             <List size={20} />
           </Button>
 
-          <div className="lg:hidden font-medium text-sm truncate" style={{ fontFamily: "Manrope" }}>{activeItem?.label || "Al Rigga Auto"}</div>
+          <div className="lg:hidden font-bold text-base truncate" style={{ fontFamily: "Manrope" }}>{activeItem?.label || "Al Rigga Auto"}</div>
 
           <form onSubmit={runSearch} className="hidden md:flex flex-1 max-w-md relative">
             <MagnifyingGlass size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />

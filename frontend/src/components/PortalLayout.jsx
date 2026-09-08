@@ -7,14 +7,17 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
-  Wallet, SquaresFour, Package, MagnifyingGlass, Wallet as WalletIcon, ChatCircleText,
+  SquaresFour, Package, MagnifyingGlass, Wallet as WalletIcon, ChatCircleText,
   BellRinging, SignOut, CaretDown, List, EnvelopeSimple, Phone,
 } from "@phosphor-icons/react";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import alRiggaLogo from "@/assets/al-rigga-icon.png";
 
 const NAV = [
   { to: "/portal", label: "Dashboard", icon: SquaresFour },
   { to: "/portal/new-order", label: "New Order", icon: Package },
+  { to: "/portal/orders", label: "Search Orders", icon: MagnifyingGlass },
+  { to: "/portal/account", label: "Accounts", icon: WalletIcon },
 ];
 
 export default function PortalLayout({ children, active }) {
@@ -31,7 +34,7 @@ export default function PortalLayout({ children, active }) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col" data-testid="portal-root">
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-3">
           <button className="lg:hidden -ml-1 h-9 w-9 flex items-center justify-center" onClick={() => setDrawerOpen(true)} aria-label="Menu">
@@ -39,9 +42,9 @@ export default function PortalLayout({ children, active }) {
           </button>
 
           <button onClick={() => navigate("/portal")} className="flex items-center gap-2.5 shrink-0" data-testid="portal-brand">
-            <div className="h-8 w-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center"><Wallet size={16} weight="duotone" /></div>
+            <div className="h-9 w-9 shrink-0 flex items-center justify-center"><img src={alRiggaLogo} alt="Al Rigga Auto" className="h-8 w-auto object-contain" /></div>
             <div className="leading-tight text-left hidden sm:block">
-              <div className="font-semibold text-[13px] tracking-tight" style={{ fontFamily: "Manrope" }}>Al Rigga Auto</div>
+              <div className="font-bold text-sm tracking-tight" style={{ fontFamily: "Manrope" }}>Al Rigga Auto</div>
               <div className="text-[10px] text-muted-foreground">Automotive Spare Parts</div>
             </div>
           </button>
@@ -53,14 +56,6 @@ export default function PortalLayout({ children, active }) {
                 <n.icon size={14} weight="duotone" /> {n.label}
               </button>
             ))}
-            <button onClick={() => navigate("/portal#orders")} data-testid="portal-nav-search-orders"
-              className="px-3 py-1.5 rounded-md text-[13px] font-medium text-foreground/70 hover:bg-accent transition-colors flex items-center gap-1.5">
-              <MagnifyingGlass size={14} weight="duotone" /> Search Orders
-            </button>
-            <button onClick={() => navigate("/portal#account")} data-testid="portal-nav-accounts"
-              className="px-3 py-1.5 rounded-md text-[13px] font-medium text-foreground/70 hover:bg-accent transition-colors flex items-center gap-1.5">
-              <WalletIcon size={14} weight="duotone" /> Accounts
-            </button>
           </nav>
 
           <div className="flex-1" />
@@ -122,7 +117,10 @@ export default function PortalLayout({ children, active }) {
         <SheetContent side="left" className="p-0 w-64">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <SheetDescription className="sr-only">Al Rigga Auto customer portal navigation</SheetDescription>
-          <div className="h-14 flex items-center px-4 border-b border-border font-semibold text-sm" style={{ fontFamily: "Manrope" }}>Al Rigga Auto</div>
+          <div className="h-14 flex items-center gap-2.5 px-4 border-b border-border" style={{ fontFamily: "Manrope" }}>
+            <img src={alRiggaLogo} alt="Al Rigga Auto" className="h-7 w-auto object-contain" />
+            <span className="font-semibold text-sm">Al Rigga Auto</span>
+          </div>
           <nav className="p-2 space-y-0.5">
             {NAV.map((n) => (
               <button key={n.to} onClick={() => { navigate(n.to); setDrawerOpen(false); }}
@@ -130,12 +128,6 @@ export default function PortalLayout({ children, active }) {
                 <n.icon size={16} weight="duotone" /> {n.label}
               </button>
             ))}
-            <button onClick={() => { navigate("/portal#orders"); setDrawerOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium hover:bg-accent">
-              <MagnifyingGlass size={16} weight="duotone" /> Search Orders
-            </button>
-            <button onClick={() => { navigate("/portal#account"); setDrawerOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium hover:bg-accent">
-              <WalletIcon size={16} weight="duotone" /> Accounts
-            </button>
           </nav>
         </SheetContent>
       </Sheet>

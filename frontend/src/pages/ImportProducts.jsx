@@ -77,7 +77,7 @@ export default function ImportProducts() {
           <ArrowLeft size={16} />
         </Button>
         <div>
-          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight" style={{ fontFamily: "Manrope" }}>Import Products</h1>
+          <h1 className="text-2xl font-bold tracking-tight" style={{ fontFamily: "Manrope" }}>Import Products</h1>
           <p className="text-xs text-muted-foreground mt-0.5">Bulk-load or update the product catalog from a master spreadsheet.</p>
         </div>
       </div>
@@ -89,7 +89,7 @@ export default function ImportProducts() {
               <FileXls size={26} weight="duotone" />
             </div>
             <div>
-              <h2 className="font-medium" style={{ fontFamily: "Manrope" }}>Upload a product spreadsheet</h2>
+              <h2 className="font-bold" style={{ fontFamily: "Manrope" }}>Upload a product spreadsheet</h2>
               <p className="text-sm text-muted-foreground mt-1">
                 Expected columns: <span className="font-mono text-xs">Part Number</span>, <span className="font-mono text-xs">Description</span>, <span className="font-mono text-xs">Required Qty</span>, <span className="font-mono text-xs">Available Qty</span>, <span className="font-mono text-xs">Net Price</span>. Handles 100,000+ rows.
               </p>
@@ -122,7 +122,7 @@ export default function ImportProducts() {
 
           <Card className="shadow-card overflow-hidden">
             <div className="p-4 border-b border-border flex items-center justify-between">
-              <h3 className="text-sm font-medium" style={{ fontFamily: "Manrope" }}>Preview — first {preview.preview.length} valid rows</h3>
+              <h3 className="text-base font-bold" style={{ fontFamily: "Manrope" }}>Preview — first {preview.preview.length} valid rows</h3>
               <span className="text-xs text-muted-foreground">Detected columns: {preview.detected_headers.join(", ")}</span>
             </div>
             <div className="overflow-x-auto">
@@ -150,7 +150,7 @@ export default function ImportProducts() {
           {preview.errors_sample.length > 0 && (
             <Card className="shadow-card overflow-hidden border-destructive/30" data-testid="import-error-preview">
               <div className="p-3.5 border-b border-border flex items-center justify-between">
-                <h3 className="text-sm font-medium text-destructive" style={{ fontFamily: "Manrope" }}>
+                <h3 className="text-base font-bold text-destructive" style={{ fontFamily: "Manrope" }}>
                   Invalid rows (will be skipped) — showing {preview.errors_sample.length} of {preview.invalid_rows}
                 </h3>
                 <Button variant="outline" size="sm" onClick={() => downloadErrors(preview.import_id)} className="gap-1.5">
@@ -191,7 +191,7 @@ export default function ImportProducts() {
           <div className="h-14 w-14 rounded-full bg-success/10 text-success flex items-center justify-center mx-auto mb-4">
             <CheckCircle size={28} weight="fill" />
           </div>
-          <h2 className="text-lg font-semibold" style={{ fontFamily: "Manrope" }}>Import complete</h2>
+          <h2 className="text-xl font-bold" style={{ fontFamily: "Manrope" }}>Import complete</h2>
           <div className="grid grid-cols-2 gap-3 mt-5 text-left">
             <SummaryStat label="New Products" value={summary.inserted} tone="up" />
             <SummaryStat label="Updated Products" value={summary.updated} tone="default" />

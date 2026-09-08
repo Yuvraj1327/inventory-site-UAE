@@ -7,10 +7,10 @@ import { Sparkle, PaperPlaneTilt, User, Info } from "@phosphor-icons/react";
 
 const SESSION = "main-session";
 const SUGGESTIONS = [
-  "How can I reduce my tax liability?",
   "What's my current profit margin?",
-  "Explain accrual vs cash accounting",
   "How much do customers still owe me?",
+  "What should I reorder based on recent demand?",
+  "Explain accrual vs cash accounting",
 ];
 
 // This page's endpoints require the same Supabase auth as every other
@@ -56,6 +56,7 @@ export default function Chat() {
   const send = async (text) => {
     const q = (text ?? input).trim();
     if (!q || streaming || notConfigured) return;
+    const history = messages.map((m) => ({ role: m.role, content: m.content })); // conversation so far, before this turn
     setInput("");
     setMessages((m) => [...m, { role: "user", content: q }, { role: "assistant", content: "" }]);
     setStreaming(true);
@@ -65,7 +66,7 @@ export default function Chat() {
       const res = await fetch(`${API}/chat`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ session_id: SESSION, message: q }),
+        body: JSON.stringify({ session_id: SESSION, message: q, history }),
       });
 
       if (res.status === 503) {
@@ -124,8 +125,8 @@ export default function Chat() {
           <Sparkle size={22} weight="duotone" />
         </div>
         <div>
-          <h1 className="text-2xl tracking-tight" style={{ fontFamily: "Manrope" }}>AI Assistant</h1>
-          <p className="text-xs text-muted-foreground">Ask about accounting, taxes or your business finances</p>
+          <h1 className="text-3xl tracking-tight" style={{ fontFamily: "Manrope" }}>AI Assistant</h1>
+          <p className="text-xs text-muted-foreground">Ask about inventory, orders, purchases, customers, suppliers, invoices, or accounting</p>
         </div>
       </div>
 
@@ -140,7 +141,7 @@ export default function Chat() {
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center gap-6 text-center">
             <Sparkle size={44} weight="duotone" className="text-muted-foreground" />
-            <p className="text-muted-foreground text-sm max-w-sm">Your AI accountant is ready. Try one of these:</p>
+            <p className="text-muted-foreground text-sm max-w-sm">Your AI assistant is ready. Try one of these:</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
               {SUGGESTIONS.map((s) => (
                 <button key={s} onClick={() => send(s)} data-testid="suggestion-btn"
@@ -179,7 +180,7 @@ export default function Chat() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
-          placeholder="Ask your AI accountant…"
+          placeholder="Ask your AI assistant…"
           className="bg-white rounded-full px-5"
           disabled={streaming}
         />

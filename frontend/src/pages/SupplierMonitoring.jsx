@@ -83,7 +83,7 @@ export default function SupplierMonitoring() {
     <div className="space-y-8" data-testid="supplier-monitoring-page">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-light tracking-tight" style={{ fontFamily: "Manrope" }}>Supplier Price Monitoring</h1>
+          <h1 className="text-4xl font-bold tracking-tight" style={{ fontFamily: "Manrope" }}>Supplier Price Monitoring</h1>
           <p className="text-sm text-muted-foreground mt-1">Availability, price history and comparison across suppliers.</p>
         </div>
         <div className="flex gap-2">

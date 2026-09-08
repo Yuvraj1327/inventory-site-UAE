@@ -8,7 +8,7 @@ function Stat({ label, value }) {
   return (
     <Card className="p-5">
       <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="text-2xl font-light mt-1" style={{ fontFamily: "Manrope" }}>{value}</div>
+      <div className="text-3xl font-bold mt-1" style={{ fontFamily: "Manrope" }}>{value}</div>
     </Card>
   );
 }
@@ -32,7 +32,7 @@ export default function CustomerIntelligence() {
     <div className="space-y-8" data-testid="customer-intelligence-page">
       <div>
         <div className="text-xs uppercase tracking-[0.2em] font-semibold text-muted-foreground">Phase 9</div>
-        <h1 className="text-4xl sm:text-5xl tracking-tight font-light mt-1" style={{ fontFamily: "Manrope" }}>Customer Intelligence</h1>
+        <h1 className="text-5xl tracking-tight font-bold mt-1" style={{ fontFamily: "Manrope" }}>Customer Intelligence</h1>
         <p className="text-muted-foreground mt-2 text-sm">Browsing &amp; demand signal is shown separately from actual purchases below — the two are never mixed.</p>
       </div>
 

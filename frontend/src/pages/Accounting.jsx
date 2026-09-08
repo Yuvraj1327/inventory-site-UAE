@@ -55,7 +55,7 @@ export default function Accounting() {
       <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
           <div className="text-xs uppercase tracking-[0.2em] font-semibold text-muted-foreground">Phase 10</div>
-          <h1 className="text-4xl sm:text-5xl tracking-tight font-light mt-1" style={{ fontFamily: "Manrope" }}>Accounting</h1>
+          <h1 className="text-5xl tracking-tight font-bold mt-1" style={{ fontFamily: "Manrope" }}>Accounting</h1>
         </div>
         <Dialog open={payOpen} onOpenChange={setPayOpen}>
           <DialogTrigger asChild><Button className="rounded-full gap-2" data-testid="record-payment-btn"><Plus size={16} weight="bold" /> Record Payment</Button></DialogTrigger>

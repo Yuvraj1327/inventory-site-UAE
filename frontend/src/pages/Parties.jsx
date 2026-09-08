@@ -162,7 +162,7 @@ export default function Parties({ kind }) {
       <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
           <div className="text-xs uppercase tracking-[0.2em] font-semibold text-muted-foreground">Directory</div>
-          <h1 className="text-4xl sm:text-5xl tracking-tight font-light mt-1" style={{ fontFamily: "Manrope" }}>{title}</h1>
+          <h1 className="text-5xl tracking-tight font-bold mt-1" style={{ fontFamily: "Manrope" }}>{title}</h1>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
@@ -340,7 +340,7 @@ export default function Parties({ kind }) {
               </Button>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-2xl font-light" style={{ fontFamily: "Manrope" }}>{soa.name}</div>
+                  <div className="text-3xl font-bold" style={{ fontFamily: "Manrope" }}>{soa.name}</div>
                   <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground capitalize">{soa.kind} statement</div>
                 </div>
                 <div className="text-right">

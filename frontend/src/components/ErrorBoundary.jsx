@@ -39,7 +39,7 @@ export default class ErrorBoundary extends Component {
       return (
         <div className="min-h-[60vh] flex flex-col items-center justify-center text-center gap-3 px-6">
           <Warning size={32} className="text-destructive" weight="duotone" />
-          <h2 className="text-lg font-medium" style={{ fontFamily: "Manrope" }}>This page hit a problem</h2>
+          <h2 className="text-xl font-bold" style={{ fontFamily: "Manrope" }}>This page hit a problem</h2>
           <p className="text-sm text-muted-foreground max-w-sm">
             Something failed to render. Reloading usually fixes this.
           </p>

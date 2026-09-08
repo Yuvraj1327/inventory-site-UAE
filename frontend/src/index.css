@@ -13,13 +13,14 @@ body {
 
 @layer base {
     :root {
-        --background: 40 20% 97%;
+        --background: 40 15% 97%;
         --foreground: 60 8% 10%;
         --card: 0 0% 100%;
         --card-foreground: 60 8% 10%;
         --popover: 0 0% 100%;
         --popover-foreground: 60 8% 10%;
-        --primary: 100 6% 18%;
+        /* Al Rigga Auto brand orange, sampled directly from the logo mark. */
+        --primary: 14 84% 47%;
         --primary-foreground: 0 0% 100%;
         --secondary: 45 15% 92%;
         --secondary-foreground: 60 8% 10%;
@@ -27,17 +28,17 @@ body {
         --muted-foreground: 45 6% 45%;
         --accent: 42 18% 89%;
         --accent-foreground: 60 8% 10%;
-        --destructive: 0 48% 57%;
+        --destructive: 0 55% 48%;
         --destructive-foreground: 0 0% 100%;
         --success: 90 20% 41%;
         --warning: 30 55% 64%;
         --border: 45 15% 87%;
         --input: 45 15% 87%;
-        --ring: 100 6% 18%;
-        --chart-1: 90 18% 41%;
-        --chart-2: 30 55% 64%;
-        --chart-3: 100 6% 25%;
-        --chart-4: 20 45% 55%;
+        --ring: 14 84% 47%;
+        --chart-1: 14 84% 47%;
+        --chart-2: 100 6% 22%;
+        --chart-3: 30 55% 64%;
+        --chart-4: 90 18% 41%;
         --chart-5: 45 30% 70%;
         --radius: 0.75rem;
     }
@@ -58,6 +59,7 @@ body {
     }
     h1, h2, h3, h4 {
         font-family: 'Manrope', sans-serif;
+        font-weight: 700;
         letter-spacing: -0.01em;
     }
     .font-mono, .tabular {

@@ -62,7 +62,7 @@ export default function LostSales() {
     <div className="space-y-8" data-testid="lost-sales-page">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-3xl font-light tracking-tight" style={{ fontFamily: "Manrope" }}>Lost Sales &amp; Demand</h1>
+          <h1 className="text-4xl font-bold tracking-tight" style={{ fontFamily: "Manrope" }}>Lost Sales &amp; Demand</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Requests you couldn't fully supply — tracked separately from completed sales, used for stock &amp; purchasing decisions.
           </p>

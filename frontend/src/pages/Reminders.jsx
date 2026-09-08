@@ -49,7 +49,7 @@ export default function Reminders() {
       <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
           <div className="text-xs uppercase tracking-[0.2em] font-semibold text-muted-foreground">Collections</div>
-          <h1 className="text-4xl sm:text-5xl tracking-tight font-light mt-1" style={{ fontFamily: "Manrope" }}>Payment Reminders</h1>
+          <h1 className="text-5xl tracking-tight font-bold mt-1" style={{ fontFamily: "Manrope" }}>Payment Reminders</h1>
           <p className="text-muted-foreground mt-2 text-sm">Customers with outstanding balances. Let AI draft a friendly follow-up.</p>
         </div>
         <Card className="px-6 py-4 bg-white border-border/60 shadow-sm rounded-xl">

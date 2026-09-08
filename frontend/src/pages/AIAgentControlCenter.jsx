@@ -61,7 +61,7 @@ export default function AIAgentControlCenter() {
     <div className="space-y-8" data-testid="ai-agent-page">
       <div>
         <div className="text-xs uppercase tracking-[0.2em] font-semibold text-muted-foreground">Phase 8</div>
-        <h1 className="text-4xl sm:text-5xl tracking-tight font-light mt-1" style={{ fontFamily: "Manrope" }}>Supplier AI Control Center</h1>
+        <h1 className="text-5xl tracking-tight font-bold mt-1" style={{ fontFamily: "Manrope" }}>Supplier AI Control Center</h1>
         <p className="text-muted-foreground mt-2 text-sm max-w-2xl">
           Every opportunity here needs an explicit admin decision. The agent never purchases, reserves, or spends anything on its own.
         </p>

@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { api, money, formatApiError } from "@/lib/api";
 import PortalLayout from "@/components/PortalLayout";
@@ -46,7 +46,7 @@ export default function PortalNewOrder() {
             <ArrowLeft size={16} />
           </Button>
           <div>
-            <h1 className="text-lg font-semibold tracking-tight" style={{ fontFamily: "Manrope" }}>
+            <h1 className="text-xl font-bold tracking-tight" style={{ fontFamily: "Manrope" }}>
               {step === "success" ? "Order Placed" : step === "confirm" ? "Confirm Order" : "New Order"}
             </h1>
             <p className="text-xs text-muted-foreground">Al Rigga Auto — Automotive Spare Parts</p>
@@ -56,8 +56,7 @@ export default function PortalNewOrder() {
         {step === "build" && (
           <BuildStep cart={cart} cartItems={cartItems} addToCart={addToCart} setQty={setQty} removeItem={removeItem}
             rejected={rejected} setRejected={setRejected} onContinue={() => setStep("confirm")} />
-        )}
-        {step === "confirm" && (
+        )}        {step === "confirm" && (
           <ConfirmStep cartItems={cartItems} rejected={rejected} subtotal={subtotal} vat={vat} grandTotal={grandTotal}
             onBack={() => setStep("build")} onPlaced={(order) => { setPlacedOrder(order); setStep("success"); }} />
         )}
@@ -70,11 +69,14 @@ export default function PortalNewOrder() {
 // ---------------------------------------------------------------- BUILD STEP
 
 function BuildStep({ cart, cartItems, addToCart, setQty, removeItem, rejected, setRejected, onContinue }) {
-  const [partNumber, setPartNumber] = useState("");
+  const [searchParams] = useSearchParams();
+  const prefill = searchParams.get("part") || "";
+  const [partNumber, setPartNumber] = useState(prefill);
   const [qty, setQtyInput] = useState(1);
   const [requestedPrice, setRequestedPrice] = useState("");
   const [results, setResults] = useState(null); // null=not searched, []=no match, [..]=matches
   const [searching, setSearching] = useState(false);
+  const autoSearched = useRef(false);
 
   const search = async () => {
     if (!partNumber.trim()) return;
@@ -95,6 +97,13 @@ function BuildStep({ cart, cartItems, addToCart, setQty, removeItem, rejected, s
     toast.success(`Added ${p.part_number}`);
     setPartNumber(""); setQtyInput(1); setRequestedPrice(""); setResults(null);
   };
+
+  // Deep-link support: the Dashboard's "Trending Parts" cards link here
+  // with ?part=XXX, so it's already searched by the time the page opens.
+  useEffect(() => {
+    if (prefill && !autoSearched.current) { autoSearched.current = true; search(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill]);
 
   return (
     <div className="space-y-4">
@@ -167,7 +176,7 @@ function BuildStep({ cart, cartItems, addToCart, setQty, removeItem, rejected, s
 
       <Card className="p-4 shadow-card" data-testid="new-order-cart">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium flex items-center gap-2" style={{ fontFamily: "Manrope" }}><Package size={16} /> Order Items ({cartItems.length})</h3>
+          <h3 className="text-base font-bold flex items-center gap-2" style={{ fontFamily: "Manrope" }}><Package size={16} /> Order Items ({cartItems.length})</h3>
         </div>
         {cartItems.length === 0 ? (
           <p className="text-sm text-muted-foreground py-6 text-center">No items added yet. Search a part number above to get started.</p>
@@ -271,7 +280,7 @@ function XlsxUploadPanel({ onMatched, onRejected }) {
     <Card className="p-4 shadow-card">
       <div className="flex items-center justify-between gap-3 mb-3">
         <div>
-          <h3 className="text-sm font-medium" style={{ fontFamily: "Manrope" }}>Bulk order from spreadsheet</h3>
+          <h3 className="text-base font-bold" style={{ fontFamily: "Manrope" }}>Bulk order from spreadsheet</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Columns: Sl No, Part Number, Quantity, Requested Price (optional)</p>
         </div>
         <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" data-testid="xlsx-file-input"
@@ -359,7 +368,7 @@ function ConfirmStep({ cartItems, rejected, subtotal, vat, grandTotal, onBack, o
       </Card>
 
       <Card className="shadow-card overflow-hidden" data-testid="confirm-available-items">
-        <div className="p-3.5 border-b border-border text-sm font-medium" style={{ fontFamily: "Manrope" }}>Available Items</div>
+        <div className="p-3.5 border-b border-border text-base font-bold" style={{ fontFamily: "Manrope" }}>Available Items</div>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader><TableRow>
@@ -383,7 +392,7 @@ function ConfirmStep({ cartItems, rejected, subtotal, vat, grandTotal, onBack, o
 
       {rejected.length > 0 && (
         <Card className="shadow-card overflow-hidden border-destructive/30" data-testid="confirm-rejected-items">
-          <div className="p-3.5 border-b border-border text-sm font-medium text-destructive" style={{ fontFamily: "Manrope" }}>Rejected Items</div>
+          <div className="p-3.5 border-b border-border text-base font-bold text-destructive" style={{ fontFamily: "Manrope" }}>Rejected Items</div>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader><TableRow><TableHead>Part Number</TableHead><TableHead>Reason</TableHead></TableRow></TableHeader>
@@ -420,7 +429,7 @@ function SuccessStep({ order, onNewOrder }) {
   return (
     <Card className="p-8 shadow-card text-center max-w-md mx-auto" data-testid="order-success">
       <div className="h-14 w-14 rounded-full bg-success/10 text-success flex items-center justify-center mx-auto mb-4"><CheckCircle size={28} weight="fill" /></div>
-      <h2 className="text-lg font-semibold" style={{ fontFamily: "Manrope" }}>Order placed successfully</h2>
+      <h2 className="text-xl font-bold" style={{ fontFamily: "Manrope" }}>Order placed successfully</h2>
       <p className="text-sm text-muted-foreground mt-1">Your order is now in our fulfilment queue.</p>
       <div className="mt-4 p-3 rounded-lg bg-muted/50 inline-block">
         <div className="text-xs text-muted-foreground">Order Number</div>

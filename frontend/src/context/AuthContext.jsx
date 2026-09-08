@@ -8,7 +8,7 @@ export const useAuth = () => useContext(AuthContext);
 // TEMPORARY: set to false once /accounting and the loading-state issue are
 // both confirmed fixed in the browser. Logs every auth state transition so
 // a stuck "Loading…" screen can be traced to the exact step it stalls at.
-const AUTH_DEBUG = true;
+const AUTH_DEBUG = false;
 const alog = (...args) => { if (AUTH_DEBUG) console.log("[AuthContext]", ...args); };
 
 export function AuthProvider({ children }) {

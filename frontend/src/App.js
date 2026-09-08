@@ -34,6 +34,7 @@ const LostSales = lazy(() => import("@/pages/LostSales"));
 const SupplierMonitoring = lazy(() => import("@/pages/SupplierMonitoring"));
 const AIAgentControlCenter = lazy(() => import("@/pages/AIAgentControlCenter"));
 const CustomerIntelligence = lazy(() => import("@/pages/CustomerIntelligence"));
+const LandingPage = lazy(() => import("@/pages/LandingPage"));
 
 function PageFallback() {
   return (
@@ -54,7 +55,7 @@ function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/portal" element={<ProtectedRoute role="customer"><ErrorBoundary resetKey="portal"><Portal /></ErrorBoundary></ProtectedRoute>} />
               <Route path="/portal/new-order" element={<ProtectedRoute role="customer"><ErrorBoundary resetKey="portal-new-order"><PortalNewOrder /></ErrorBoundary></ProtectedRoute>} />
-              <Route path="/" element={<ProtectedRoute role={["admin", "staff"]}><Layout /></ProtectedRoute>}>
+              <Route path="/" element={<ProtectedRoute role={["admin", "staff"]} fallback={<LandingPage />}><Layout /></ProtectedRoute>}>
                 <Route index element={<Dashboard />} />
                 <Route path="transactions" element={<Transactions />} />
                 <Route path="orders" element={<Orders />} />
