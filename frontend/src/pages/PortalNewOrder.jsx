@@ -245,29 +245,36 @@ function XlsxUploadPanel({ onMatched, onRejected }) {
       setProgress({ done: 0, total: parsed.length });
       const matched = [];
       const rejectedRows = [];
-      const CONCURRENCY = 6;
-      let idx = 0;
-      const worker = async () => {
-        while (idx < parsed.length) {
-          const i = idx++;
-          const row = parsed[i];
-          try {
-            if (row.qty <= 0) { rejectedRows.push({ part_number: row.part_number, reason: "Quantity must be greater than 0" }); }
-            else {
-              const r = await api.get(`/portal/products?q=${encodeURIComponent(row.part_number)}`);
-              const exact = (r.data || []).find((p) => p.part_number.toLowerCase() === row.part_number.toLowerCase());
-              if (exact) matched.push({ ...exact, qty: row.qty, requested_price: row.requested_price });
-              else rejectedRows.push({ part_number: row.part_number, reason: "Part Number not found" });
-            }
-          } catch {
-            rejectedRows.push({ part_number: row.part_number, reason: "Lookup failed — try again" });
+      const validRows = [];
+      for (const row of parsed) {
+        if (row.qty <= 0) rejectedRows.push({ part_number: row.part_number, reason: "Quantity must be greater than 0" });
+        else validRows.push(row);
+      }
+      let done = rejectedRows.length;
+      setProgress({ done, total: parsed.length });
+
+      // Matched in batches (not one request per row) so 100+ row files don't
+      // hammer the API with hundreds of requests and silently drop matches.
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < validRows.length; i += BATCH_SIZE) {
+        const batch = validRows.slice(i, i + BATCH_SIZE);
+        try {
+          const r = await api.post("/portal/products/bulk-match", { part_numbers: batch.map((row) => row.part_number) });
+          const byPartNumber = new Map((r.data || []).map((p) => [p.part_number.toLowerCase(), p]));
+          for (const row of batch) {
+            const exact = byPartNumber.get(row.part_number.toLowerCase());
+            if (exact) matched.push({ ...exact, qty: row.qty, requested_price: row.requested_price });
+            else rejectedRows.push({ part_number: row.part_number, reason: "Part Number not found" });
           }
-          setProgress((p) => ({ ...p, done: p.done + 1 }));
+        } catch {
+          batch.forEach((row) => rejectedRows.push({ part_number: row.part_number, reason: "Lookup failed — try again" }));
         }
-      };
-      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, parsed.length) }, worker));
+        done += batch.length;
+        setProgress({ done, total: parsed.length });
+      }
 
       setPreview({ matched, rejected: rejectedRows });
+      onMatched(matched);
       onRejected(rejectedRows);
       setStatus("done");
     } catch (e) {
@@ -300,6 +307,18 @@ function XlsxUploadPanel({ onMatched, onRejected }) {
             <span className="flex items-center gap-1.5 text-success"><CheckCircle size={14} weight="fill" /> {preview.matched.length} matched and added</span>
             {preview.rejected.length > 0 && <span className="flex items-center gap-1.5 text-destructive"><XCircle size={14} weight="fill" /> {preview.rejected.length} rejected</span>}
           </div>
+          {preview.matched.length > 0 && (
+            <div className="overflow-x-auto border border-border rounded-lg max-h-72 overflow-y-auto" data-testid="xlsx-matched-table">
+              <Table>
+                <TableHeader><TableRow><TableHead>Part Number</TableHead><TableHead>Description</TableHead><TableHead className="text-right">Qty</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {preview.matched.map((m, i) => (
+                    <TableRow key={i}><TableCell className="font-mono text-xs">{m.part_number}</TableCell><TableCell className="text-xs">{m.description}</TableCell><TableCell className="text-right text-xs">{m.qty}</TableCell></TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
           {preview.rejected.length > 0 && (
             <div className="overflow-x-auto border border-destructive/20 rounded-lg" data-testid="xlsx-rejected-table">
               <Table>

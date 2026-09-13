@@ -30,6 +30,8 @@ const Purchases = lazy(() => import("@/pages/Purchases"));
 const Invoices = lazy(() => import("@/pages/Invoices"));
 const Portal = lazy(() => import("@/pages/Portal"));
 const PortalNewOrder = lazy(() => import("@/pages/PortalNewOrder"));
+const PortalOrders = lazy(() => import("@/pages/PortalOrders"));
+const PortalAccount = lazy(() => import("@/pages/PortalAccount"));
 const LostSales = lazy(() => import("@/pages/LostSales"));
 const SupplierMonitoring = lazy(() => import("@/pages/SupplierMonitoring"));
 const AIAgentControlCenter = lazy(() => import("@/pages/AIAgentControlCenter"));
@@ -55,6 +57,8 @@ function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/portal" element={<ProtectedRoute role="customer"><ErrorBoundary resetKey="portal"><Portal /></ErrorBoundary></ProtectedRoute>} />
               <Route path="/portal/new-order" element={<ProtectedRoute role="customer"><ErrorBoundary resetKey="portal-new-order"><PortalNewOrder /></ErrorBoundary></ProtectedRoute>} />
+              <Route path="/portal/orders" element={<ProtectedRoute role="customer"><ErrorBoundary resetKey="portal-orders"><PortalOrders /></ErrorBoundary></ProtectedRoute>} />
+              <Route path="/portal/account" element={<ProtectedRoute role="customer"><ErrorBoundary resetKey="portal-account"><PortalAccount /></ErrorBoundary></ProtectedRoute>} />
               <Route path="/" element={<ProtectedRoute role={["admin", "staff"]} fallback={<LandingPage />}><Layout /></ProtectedRoute>}>
                 <Route index element={<Dashboard />} />
                 <Route path="transactions" element={<Transactions />} />

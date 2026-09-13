@@ -4,7 +4,7 @@ from typing import Optional
 
 from app.core.security import require_staff_or_admin
 from app.core.supabase_client import get_service_client
-from app.services.compat import with_legacy_id, clean_list, now_iso, find_party_id_by_name
+from app.services.compat import with_legacy_id, clean_list, now_iso, find_party_id_by_name, compute_order_line_totals
 from app.services.audit import log_action
 
 router = APIRouter(prefix="/api/orders", tags=["orders"])
@@ -49,14 +49,25 @@ def _derive_totals(data: dict) -> dict:
     return data
 
 
+def _with_real_totals(rows: list[dict], sb) -> list[dict]:
+    """Overrides selling_value with the line-item-derived total wherever
+    the order actually has lines — keeps the existing stored value as a
+    fallback for legacy/header-only orders that never got real lines."""
+    totals = compute_order_line_totals(sb, [r["id"] for r in rows])
+    for r in rows:
+        if r["id"] in totals:
+            r["selling_value"] = totals[r["id"]]
+    return rows
+
+
 @router.get("")
 async def list_orders(include_closed: bool = False, staff=Depends(require_staff_or_admin)):
     sb = get_service_client()
     if include_closed:
         res = sb.table("orders").select("*").order("order_date", desc=True).execute()
-        return clean_list(res.data or [])
+        return clean_list(_with_real_totals(res.data or [], sb))
     res = sb.table("orders").select("*").in_("status", list(ACTIVE_STATUSES)).order("order_date", desc=True).execute()
-    return clean_list(res.data or [])
+    return clean_list(_with_real_totals(res.data or [], sb))
 
 
 @router.get("/closed")

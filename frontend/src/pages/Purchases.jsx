@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, money, fmtDate, formatApiError } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ const STATUS_TONE = {
 };
 
 export default function Purchases() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
 
@@ -51,7 +53,7 @@ export default function Purchases() {
   const [orderLinesByOrder, setOrderLinesByOrder] = useState({});
   const [receiving, setReceiving] = useState(false);
 
-  const load = () => api.get("/purchases").then((r) => setRows(r.data));
+  const load = () => api.get("/purchases").then((r) => setRows(r.data)).catch(() => setRows([]));
   useEffect(() => {
     load();
     api.get("/parties?kind=supplier").then((r) => setSuppliers(r.data)).catch(() => {});
@@ -59,6 +61,17 @@ export default function Purchases() {
 
   // ---------- Quick entry (unchanged Phase 2 behavior) ----------
   const openNew = () => { setSupplier(""); setRef(""); setItems([{ ...emptyItem }]); setOpen(true); };
+
+  // Sidebar's "New Order" (Inventory group) deep-links here with ?new=1 to
+  // land straight in this same quick-entry flow instead of the plain list.
+  useEffect(() => {
+    if (searchParams.get("new") === "1") {
+      openNew();
+      searchParams.delete("new");
+      setSearchParams(searchParams, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   const setItem = (i, key, val) => setItems(items.map((it, idx) => (idx === i ? { ...it, [key]: val } : it)));
   const addItem = () => setItems([...items, { ...emptyItem }]);
   const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));

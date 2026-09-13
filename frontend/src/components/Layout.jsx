@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   SquaresFour, Receipt, Package, UsersThree, Truck, Scan, Sparkle,
   BellRinging, Cube, ShoppingCart, FileText, SignOut, TrendDown, ChartLineUp,
-  Robot, ChartBar, Calculator, List, CaretLeft, MagnifyingGlass, CaretDown,
+  Robot, ChartBar, Calculator, List, CaretLeft, MagnifyingGlass, CaretDown, FilePlus,
 } from "@phosphor-icons/react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/context/AuthContext";
@@ -24,6 +24,7 @@ const NAV_GROUPS = [
   ]},
   { title: "Inventory", items: [
     { to: "/inventory", label: "Inventory", icon: Cube, id: "inventory" },
+    { to: "/purchases?new=1", label: "New Order", icon: FilePlus, id: "new-order" },
     { to: "/purchases", label: "Purchases", icon: ShoppingCart, id: "purchases" },
     { to: "/suppliers", label: "Suppliers", icon: Truck, id: "suppliers" },
     { to: "/lost-sales", label: "Lost Sales", icon: TrendDown, id: "lost-sales" },

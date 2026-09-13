@@ -1,10 +1,11 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { api, money, fmtDate } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
 } from "@/components/ui/dialog";
@@ -15,7 +16,8 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Trash, FileText, UsersThree, Truck, FilePdf, Key } from "@phosphor-icons/react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Plus, Trash, FileText, UsersThree, Truck, FilePdf, Key, CaretDown, X } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const BRANDS = [
@@ -40,7 +42,14 @@ const makeLpo = (name, phone) => {
 const emptyForm = {
   name: "", company: "", email: "", mobile: "", whatsapp: "", phone: "",
   office_address: "", country: "", city: "", brand_focus: "", special_note: "",
+  tax_registration_number: "", is_walkin: false,
 };
+
+// brand_focus stays a single comma-separated text field on the backend
+// (no schema change needed) — these two helpers are the only place that
+// knows it's secretly a list, so multi-select is purely a UI-layer change.
+const brandsFromField = (v) => (v ? v.split(",").map((s) => s.trim()).filter(Boolean) : []);
+const brandsToField = (arr) => arr.join(", ");
 
 export default function Parties({ kind }) {
   const [rows, setRows] = useState([]);
@@ -90,11 +99,15 @@ export default function Parties({ kind }) {
   const title = kind === "customer" ? "Customers" : "Suppliers";
   const Icon = kind === "customer" ? UsersThree : Truck;
 
-  const load = useCallback(() => api.get(`/parties?kind=${kind}`).then((r) => setRows(r.data)), [kind]);
-  useEffect(() => { setRows([]); load(); }, [load]);
+  const load = () => api.get(`/parties?kind=${kind}`).then((r) => setRows(r.data)).catch(() => setRows([]));
+  useEffect(() => { setRows([]); load(); }, [kind]);
 
   const save = async () => {
     if (!form.name) { toast.error("Name is required"); return; }
+    if (kind === "customer" && !form.is_walkin && !form.tax_registration_number.trim()) {
+      toast.error("TRN No. is required unless this is a walk-in/cash customer");
+      return;
+    }
     await api.post("/parties", { ...form, kind });
     toast.success(`${title.slice(0, -1)} added`);
     setOpen(false); setForm(emptyForm); setCountryCode(""); load();
@@ -102,9 +115,9 @@ export default function Parties({ kind }) {
 
   const remove = async (id) => { await api.delete(`/parties/${id}`); load(); };
 
-  const viewSoa = async (name) => {
+  const viewSoa = async (name, trn) => {
     const r = await api.get(`/soa/${kind}/${encodeURIComponent(name)}`);
-    setSoa(r.data); setSoaOpen(true);
+    setSoa({ ...r.data, tax_registration_number: trn || "" }); setSoaOpen(true);
   };
 
   const printSoa = () => {
@@ -140,6 +153,7 @@ export default function Parties({ kind }) {
         <div style="text-align:right"><div class="label">Balance Due</div><div class="big">$${money(soa.balance)}</div></div>
       </div>
       <div class="name">${soa.name} <span class="label">(${soa.kind})</span></div>
+      ${soa.tax_registration_number ? `<div class="label">TRN: ${soa.tax_registration_number}</div>` : ""}
       <table>
         <thead><tr><th>Order</th><th>Date</th><th class="num">Billed</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead>
         <tbody>${rowsHtml || '<tr><td colspan="5" style="text-align:center;color:#78766F">No orders recorded.</td></tr>'}</tbody>
@@ -172,8 +186,10 @@ export default function Parties({ kind }) {
             <DialogHeader><DialogTitle style={{ fontFamily: "Manrope" }} className="capitalize">New {kind}</DialogTitle></DialogHeader>
             {kind === "supplier" ? (
               <div className="space-y-4">
-                <div><Label className="text-xs">Name</Label>
+                <div><Label className="text-xs">Vendor Name</Label>
                   <Input data-testid="supplier-name-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="bg-white" /></div>
+                <div><Label className="text-xs">Vendor TRN No.</Label>
+                  <Input data-testid="supplier-trn-input" value={form.tax_registration_number} onChange={(e) => setForm({ ...form, tax_registration_number: e.target.value })} className="bg-white" /></div>
                 <div><Label className="text-xs">Email</Label>
                   <Input data-testid="supplier-email-input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="bg-white" /></div>
                 <div><Label className="text-xs">Phone</Label>
@@ -197,6 +213,19 @@ export default function Parties({ kind }) {
                   <div><Label className="text-xs">Company</Label>
                     <Input data-testid="customer-company-input" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} className="bg-white" /></div>
                 </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <Checkbox id="is-walkin" data-testid="customer-walkin-checkbox" checked={form.is_walkin}
+                    onCheckedChange={(v) => setForm({ ...form, is_walkin: !!v, tax_registration_number: v ? "" : form.tax_registration_number })} />
+                  <Label htmlFor="is-walkin" className="text-xs font-normal cursor-pointer">Walk-in / cash customer (no TRN required)</Label>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">TRN No. {!form.is_walkin && <span className="text-destructive">*</span>}</Label>
+                    <Input data-testid="customer-trn-input" value={form.tax_registration_number} disabled={form.is_walkin}
+                      onChange={(e) => setForm({ ...form, tax_registration_number: e.target.value })}
+                      className={form.is_walkin ? "bg-muted/50 text-muted-foreground" : "bg-white"} />
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label className="text-xs">Country</Label>
@@ -219,12 +248,47 @@ export default function Parties({ kind }) {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label className="text-xs">Brand Focus</Label>
-                    <Select value={form.brand_focus} onValueChange={(v) => setForm({ ...form, brand_focus: v })}>
-                      <SelectTrigger data-testid="customer-brand-select" className="bg-white"><SelectValue placeholder="Select brand" /></SelectTrigger>
-                      <SelectContent className="max-h-72">
-                        {BRANDS.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button type="button" data-testid="customer-brand-select"
+                          className="w-full flex items-center justify-between gap-2 h-9 px-3 rounded-md border border-input bg-white text-sm">
+                          <span className="truncate text-left text-muted-foreground">
+                            {(() => { const n = brandsFromField(form.brand_focus).length; return n > 0 ? `${n} brand${n > 1 ? "s" : ""} selected` : "Select brands"; })()}
+                          </span>
+                          <CaretDown size={14} className="shrink-0 text-muted-foreground" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="max-h-72 overflow-y-auto w-56">
+                        {BRANDS.map((b) => {
+                          const selected = brandsFromField(form.brand_focus);
+                          const checked = selected.includes(b);
+                          return (
+                            <DropdownMenuCheckboxItem key={b} checked={checked} data-testid={`brand-option-${b}`}
+                              onSelect={(e) => e.preventDefault()}
+                              onCheckedChange={(v) => {
+                                const next = v ? [...selected, b] : selected.filter((x) => x !== b);
+                                setForm({ ...form, brand_focus: brandsToField(next) });
+                              }}>
+                              {b}
+                            </DropdownMenuCheckboxItem>
+                          );
+                        })}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    {/* Selected brands stay clearly visible below the picker, not hidden inside it */}
+                    {brandsFromField(form.brand_focus).length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2" data-testid="selected-brands">
+                        {brandsFromField(form.brand_focus).map((b) => (
+                          <span key={b} className="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">
+                            {b}
+                            <button type="button" onClick={() => setForm({ ...form, brand_focus: brandsToField(brandsFromField(form.brand_focus).filter((x) => x !== b)) })}
+                              className="hover:bg-primary/20 rounded-full p-0.5" aria-label={`Remove ${b}`}>
+                              <X size={10} weight="bold" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div><Label className="text-xs">Email</Label>
                     <Input data-testid="customer-email-input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="bg-white" /></div>
@@ -271,6 +335,7 @@ export default function Parties({ kind }) {
                   ) : (
                     <>
                       <TableHead>Name</TableHead>
+                      <TableHead>TRN No.</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead>Phone</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
@@ -294,6 +359,7 @@ export default function Parties({ kind }) {
                     ) : (
                       <>
                         <TableCell className="font-medium">{p.name}</TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">{p.tax_registration_number || "—"}</TableCell>
                         <TableCell className="text-muted-foreground">{p.email || "—"}</TableCell>
                         <TableCell className="text-muted-foreground">{p.phone || "—"}</TableCell>
                       </>
@@ -312,7 +378,7 @@ export default function Parties({ kind }) {
                             <Truck size={16} weight="duotone" /> Purchases
                           </button>
                         )}
-                        <button onClick={() => viewSoa(p.name)} data-testid={`soa-${p._id}`}
+                        <button onClick={() => viewSoa(p.name, p.tax_registration_number)} data-testid={`soa-${p._id}`}
                           className="text-sm text-primary hover:underline flex items-center gap-1.5">
                           <FileText size={16} weight="duotone" /> Statement
                         </button>
@@ -342,6 +408,7 @@ export default function Parties({ kind }) {
                 <div>
                   <div className="text-3xl font-bold" style={{ fontFamily: "Manrope" }}>{soa.name}</div>
                   <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground capitalize">{soa.kind} statement</div>
+                  {soa.tax_registration_number && <div className="text-xs text-muted-foreground mt-1">TRN: {soa.tax_registration_number}</div>}
                 </div>
                 <div className="text-right">
                   <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Balance Due</div>

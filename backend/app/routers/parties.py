@@ -4,7 +4,7 @@ from typing import Optional
 
 from app.core.security import require_staff_or_admin
 from app.core.supabase_client import get_service_client
-from app.services.compat import with_legacy_id, clean_list, make_lpo, next_account_no, now_iso
+from app.services.compat import with_legacy_id, clean_list, make_lpo, next_account_no, now_iso, compute_order_line_totals
 
 router = APIRouter(prefix="/api", tags=["parties"])
 
@@ -24,7 +24,7 @@ CUSTOMER_COLUMNS = {
 }
 SUPPLIER_COLUMNS = {
     "name", "country", "city", "office_address", "phone", "mobile", "whatsapp",
-    "email", "brand_focus", "payment_terms_days", "special_note",
+    "email", "brand_focus", "payment_terms_days", "special_note", "tax_registration_number",
 }
 
 
@@ -111,9 +111,15 @@ async def statement_of_account(kind: str, name: str, staff=Depends(require_staff
     rows = []
 
     orders = sb.table("orders").select("*").eq(field, name).execute().data or []
+    order_line_totals = compute_order_line_totals(sb, [o["id"] for o in orders]) if kind == "customer" else {}
     for o in orders:
         if kind == "customer":
-            billed, paid = o.get("sale_amount", 0.0) or 0.0, o.get("received_amount", 0.0) or 0.0
+            # Prefer the real total derived from this order's own line
+            # items — sale_amount is only ever set at creation time and
+            # goes stale at $0 for any order whose lines were added
+            # afterwards (every Customer Portal order, for example).
+            billed = order_line_totals.get(o["id"], o.get("sale_amount", 0.0) or 0.0)
+            paid = o.get("received_amount", 0.0) or 0.0
         else:
             billed, paid = o.get("supplier_cost", 0.0) or 0.0, o.get("paid_to_supplier", 0.0) or 0.0
         rows.append({

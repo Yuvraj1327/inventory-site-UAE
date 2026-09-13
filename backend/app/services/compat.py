@@ -58,3 +58,27 @@ async def next_account_no(sb) -> str:
     res = sb.table("customers").select("id", count="exact").execute()
     seq = (res.count or 0) + 1
     return f"AC{seq:05d}"
+
+
+def compute_order_line_totals(sb, order_ids: list[str]) -> dict[str, float]:
+    """
+    Real order value, derived from the order's own line items
+    (order_qty * unit_selling_price), summed per order_id.
+
+    `orders.selling_value` / `orders.sale_amount` are only ever written
+    at order-creation time and never kept in sync when lines are added
+    afterwards (e.g. every order placed through the Customer Portal) —
+    so those stored columns go stale at $0 while the order clearly has
+    real value. This recomputes the true total on read, in one bulk
+    query regardless of how many orders are being displayed, rather
+    than trusting a column that may never have been updated.
+    """
+    if not order_ids:
+        return {}
+    lines = sb.table("order_lines").select("order_id, order_qty, unit_selling_price") \
+        .in_("order_id", order_ids).execute().data or []
+    totals: dict[str, float] = {}
+    for li in lines:
+        oid = li["order_id"]
+        totals[oid] = totals.get(oid, 0.0) + (li.get("order_qty") or 0) * (li.get("unit_selling_price") or 0)
+    return {oid: round(v, 2) for oid, v in totals.items()}
