@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { api, money, fmtDate } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -99,8 +99,8 @@ export default function Parties({ kind }) {
   const title = kind === "customer" ? "Customers" : "Suppliers";
   const Icon = kind === "customer" ? UsersThree : Truck;
 
-  const load = () => api.get(`/parties?kind=${kind}`).then((r) => setRows(r.data)).catch(() => setRows([]));
-  useEffect(() => { setRows([]); load(); }, [kind]);
+  const load = useCallback(() => api.get(`/parties?kind=${kind}`).then((r) => setRows(r.data)).catch(() => setRows([])), [kind]);
+  useEffect(() => { setRows([]); load(); }, [load]);
 
   const save = async () => {
     if (!form.name) { toast.error("Name is required"); return; }
