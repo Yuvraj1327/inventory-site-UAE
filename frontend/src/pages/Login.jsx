@@ -17,7 +17,7 @@ export default function Login() {
 
   useEffect(() => {
     if (user) nav(user.role === "admin" ? "/" : "/portal", { replace: true });
-  }, [user]);
+  }, [user, nav]);
 
   const submit = async (e) => {
     e.preventDefault();

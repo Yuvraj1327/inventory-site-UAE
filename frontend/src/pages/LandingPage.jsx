@@ -30,8 +30,8 @@ const BRANDS = [
 ];
 
 const WHY_ITEMS = [
-  { icon: Clock, title: "10+ Years Industry Experience", text: "A decade-plus track record supplying the UAE automotive spare parts trade." },
-  { icon: ShieldCheck, title: "Genuine Quality", text: "Parts sourced and stocked to a consistent quality standard, every order." },
+  { icon: Clock, title: "10+ Years Industry Experience", text: "A decade-plus track record of supplying the UAE automotive spare parts trade." },
+  { icon: ShieldCheck, title: "Genuine Quality", text: "Parts are sourced and stocked to a consistent quality standard with every order." },
   { icon: ChartLineUp, title: "Competitive Pricing", text: "Wholesale pricing structured for repeat, high-volume B2B buyers." },
   { icon: Handshake, title: "Reliable Supply Network", text: "An established supplier base built to keep stock moving without disruption." },
   { icon: Package, title: "Fast & Efficient Service", text: "Streamlined ordering and fulfilment built around how trade buyers actually work." },

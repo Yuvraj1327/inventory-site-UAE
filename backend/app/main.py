@@ -88,6 +88,17 @@ app.add_middleware(RateLimitMiddleware)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# httpx/httpcore (used under the hood by supabase-py's postgrest client and
+# by the google-genai SDK) log a line for every single outbound HTTP call at
+# INFO level. Since logging.basicConfig() above sets the root logger to
+# INFO, every Supabase query and Gemini call was producing an extra "HTTP
+# Request: ..." log line — multiplying real request volume several times
+# over and tripping Railway's per-second log rate limit even though the
+# requests themselves were succeeding. This only quiets that third-party
+# request/response logging; app-level logger calls above are unaffected.
+for _noisy_logger in ("httpx", "httpcore", "hpack"):
+    logging.getLogger(_noisy_logger).setLevel(logging.WARNING)
+
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
