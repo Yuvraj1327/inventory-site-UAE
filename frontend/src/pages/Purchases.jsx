@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import * as XLSX from "xlsx";
 import { api, money, fmtDate, formatApiError } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,8 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Truck, Trash, UploadSimple, Scan, X, FileText, CheckCircle } from "@phosphor-icons/react";
+import { Plus, Truck, Trash, UploadSimple, Scan, X, FileText, CheckCircle, CaretUpDown, Check, FileXls } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const emptyItem = { name: "", sku: "", qty: "", unit_cost: "" };
@@ -26,16 +29,29 @@ export default function Purchases() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [products, setProducts] = useState([]);
 
   // Quick-entry dialog (existing Phase 2 flow — goods go straight to stock)
   const [open, setOpen] = useState(false);
   const [supplier, setSupplier] = useState("");
+  const [supplierPickerOpen, setSupplierPickerOpen] = useState(false);
   const [ref, setRef] = useState("");
   const [items, setItems] = useState([{ ...emptyItem }]);
   const [saving, setSaving] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [importingXlsx, setImportingXlsx] = useState(false);
   const uploadRef = useRef();
   const scanRef = useRef();
+  const xlsxImportRef = useRef();
+
+  // "Are these goods already sold?" — shown right after Save Purchase.
+  const [disposeOpen, setDisposeOpen] = useState(false);
+  const [savedPurchase, setSavedPurchase] = useState(null);
+  const [disposition, setDisposition] = useState("not_sold");
+  const [disposeCustomer, setDisposeCustomer] = useState("");
+  const [disposeQtys, setDisposeQtys] = useState({}); // part_number -> sold qty (partial only)
+  const [disposing, setDisposing] = useState(false);
 
   // Purchase Confirmation dialog (Phase 4 — registered supplier + invoice + receiving)
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -57,6 +73,8 @@ export default function Purchases() {
   useEffect(() => {
     load();
     api.get("/parties?kind=supplier").then((r) => setSuppliers(r.data)).catch(() => {});
+    api.get("/parties?kind=customer").then((r) => setCustomers(r.data)).catch(() => {});
+    api.get("/products").then((r) => setProducts(r.data)).catch(() => {});
   }, []);
 
   // ---------- Quick entry (unchanged Phase 2 behavior) ----------
@@ -82,17 +100,95 @@ export default function Purchases() {
     if (valid.length === 0) { toast.error("Add at least one item"); return; }
     setSaving(true);
     try {
-      await api.post("/purchases", {
+      const res = await api.post("/purchases", {
         supplier, ref,
         items: valid.map((it) => ({ name: it.name, sku: it.sku, qty: num(it.qty), unit_cost: num(it.unit_cost) })),
       });
       toast.success("Purchase recorded, stock updated");
       setOpen(false); load();
+      // Ask what happened to the goods, using the purchase exactly as saved
+      // (server-confirmed items, not the local draft) so quantities match.
+      setSavedPurchase(res.data);
+      setDisposition("not_sold");
+      setDisposeCustomer("");
+      setDisposeQtys({});
+      setDisposeOpen(true);
     } catch { toast.error("Save failed"); }
     setSaving(false);
   };
 
   const remove = async (id) => { await api.delete(`/purchases/${id}`); load(); };
+
+  // XLSX import for Quick Purchase items — Sl No, Part Number, Description, Qty, Cost.
+  // Matched against the already-loaded product catalog; unmatched part
+  // numbers are still added (Quick Purchase already auto-creates unknown
+  // parts on save — same existing behavior, just flagged here for review).
+  const importItemsXlsx = async (file) => {
+    if (!file) return;
+    setImportingXlsx(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const sheetRows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+      if (sheetRows.length === 0) { toast.error("The file has no rows."); setImportingXlsx(false); return; }
+
+      const get = (row, ...keys) => {
+        for (const k of keys) {
+          const hit = Object.keys(row).find((rk) => rk.trim().toLowerCase() === k);
+          if (hit) return row[hit];
+        }
+        return "";
+      };
+      const byPartNumber = new Map(products.map((p) => [String(p.part_number || "").toLowerCase(), p]));
+
+      let matched = 0, unmatched = 0;
+      const imported = [];
+      for (const row of sheetRows) {
+        const partNumber = String(get(row, "part number", "part no", "partno") ?? "").trim();
+        if (!partNumber) continue;
+        const qty = parseFloat(get(row, "qty", "quantity")) || 0;
+        const cost = parseFloat(get(row, "cost", "unit cost")) || 0;
+        let description = String(get(row, "description") ?? "").trim();
+        const product = byPartNumber.get(partNumber.toLowerCase());
+        if (product) { matched++; if (!description) description = product.description || ""; }
+        else unmatched++;
+        imported.push({ name: description || partNumber, sku: partNumber, qty: qty || "", unit_cost: cost || (product?.unit_cost ?? "") });
+      }
+      if (imported.length === 0) { toast.error("No valid rows found — check the Part Number column."); setImportingXlsx(false); return; }
+
+      setItems((cur) => {
+        const withoutBlank = cur.filter((it) => it.name || it.sku);
+        return [...withoutBlank, ...imported];
+      });
+      toast.success(`Imported ${imported.length} item${imported.length === 1 ? "" : "s"} (${matched} matched to existing products${unmatched ? `, ${unmatched} new` : ""})`);
+    } catch (e) {
+      toast.error("Could not read that file — make sure it's a valid .xlsx.");
+    }
+    setImportingXlsx(false);
+  };
+
+  // ---------- "Are these goods already sold?" ----------
+  const disposeItems = savedPurchase?.items || [];
+  const disposeTotalQty = disposeItems.reduce((s, it) => s + (it.qty || 0), 0);
+
+  const submitDisposition = async () => {
+    if (disposition === "not_sold") { setDisposeOpen(false); return; }
+    if (!disposeCustomer) { toast.error("Select a customer"); return; }
+    const lines = disposeItems.map((it) => {
+      const soldQty = disposition === "fully_sold" ? it.qty : num(disposeQtys[it.sku]);
+      return { part_number: it.sku, description: it.name, unit_cost: it.unit_cost, qty_sold: soldQty };
+    }).filter((l) => l.qty_sold > 0);
+    if (lines.length === 0) { toast.error("Enter a sold quantity for at least one item"); return; }
+    setDisposing(true);
+    try {
+      await api.post(`/purchases/${savedPurchase._id}/dispose`, { disposition, customer: disposeCustomer, lines });
+      toast.success("Sale recorded — order and invoice created");
+      setDisposeOpen(false);
+      load();
+    } catch (e) { toast.error(formatApiError(e.response?.data?.detail)); }
+    setDisposing(false);
+  };
 
   const doUpload = async (file) => {
     if (!file) return;
@@ -257,11 +353,46 @@ export default function Purchases() {
             <DialogContent className="bg-white max-w-2xl max-h-[88vh] overflow-y-auto">
               <DialogHeader><DialogTitle style={{ fontFamily: "Manrope" }}>Quick Purchase</DialogTitle></DialogHeader>
               <div className="grid grid-cols-2 gap-3">
-                <div><Label className="text-xs">Supplier</Label><Input data-testid="purchase-supplier-input" value={supplier} onChange={(e) => setSupplier(e.target.value)} className="bg-white" /></div>
-                <div><Label className="text-xs">Reference</Label><Input data-testid="purchase-ref-input" value={ref} onChange={(e) => setRef(e.target.value)} className="bg-white" /></div>
+                <div>
+                  <Label className="text-xs">Supplier</Label>
+                  <Popover open={supplierPickerOpen} onOpenChange={setSupplierPickerOpen}>
+                    <PopoverTrigger asChild>
+                      <button type="button" data-testid="purchase-supplier-input" role="combobox" aria-expanded={supplierPickerOpen}
+                        className="w-full flex items-center justify-between h-9 px-3 rounded-md border border-input bg-white text-sm">
+                        <span className={supplier ? "" : "text-muted-foreground"}>{supplier || "Search suppliers…"}</span>
+                        <CaretUpDown size={14} className="shrink-0 text-muted-foreground" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search suppliers…" />
+                        <CommandList>
+                          <CommandEmpty>No supplier found — you can still type a new name above.</CommandEmpty>
+                          <CommandGroup>
+                            {suppliers.map((s) => (
+                              <CommandItem key={s._id} value={s.name} onSelect={() => { setSupplier(s.name); setSupplierPickerOpen(false); }}>
+                                <Check size={14} className={`mr-2 ${supplier === s.name ? "opacity-100" : "opacity-0"}`} />
+                                {s.name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div><Label className="text-xs">Order No</Label><Input data-testid="purchase-ref-input" value={ref} onChange={(e) => setRef(e.target.value)} className="bg-white" /></div>
               </div>
               <p className="text-xs text-muted-foreground">Goods go straight into available stock. For the full confirmation + receiving workflow, use "Confirm Purchase" instead.</p>
-              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground pt-2">Items</div>
+              <div className="flex items-center justify-between pt-2">
+                <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Items</div>
+                <input ref={xlsxImportRef} type="file" accept=".xlsx,.xls" className="hidden" data-testid="purchase-items-xlsx-input"
+                  onChange={(e) => { importItemsXlsx(e.target.files[0]); e.target.value = ""; }} />
+                <Button variant="outline" size="sm" onClick={() => xlsxImportRef.current?.click()} disabled={importingXlsx}
+                  data-testid="import-items-xlsx-btn" className="gap-1.5 h-7 text-xs">
+                  <FileXls size={14} /> {importingXlsx ? "Importing…" : "Import XLSX"}
+                </Button>
+              </div>
               <div className="space-y-2">
                 {items.map((it, i) => (
                   <div key={i} className="grid grid-cols-12 gap-2 items-center">
@@ -367,6 +498,63 @@ export default function Purchases() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setReceiveOpen(false)}>Cancel</Button>
             <Button onClick={submitReceive} disabled={receiving} data-testid="submit-receive-btn">{receiving ? "Saving…" : "Confirm Receiving"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* "Are these goods already sold?" — shown right after Save Purchase */}
+      <Dialog open={disposeOpen} onOpenChange={setDisposeOpen}>
+        <DialogContent className="bg-white max-w-lg" data-testid="dispose-dialog">
+          <DialogHeader><DialogTitle style={{ fontFamily: "Manrope" }}>Are these goods already sold?</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Purchase saved — {disposeItems.length} item{disposeItems.length === 1 ? "" : "s"}, {disposeTotalQty} unit{disposeTotalQty === 1 ? "" : "s"} total.</p>
+
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { key: "not_sold", label: "Not Sold" },
+              { key: "partially_sold", label: "Partially Sold" },
+              { key: "fully_sold", label: "Fully Sold" },
+            ].map((opt) => (
+              <button key={opt.key} data-testid={`dispose-option-${opt.key}`} onClick={() => setDisposition(opt.key)}
+                className={`px-3 py-2.5 rounded-lg border text-sm font-medium transition-colors ${disposition === opt.key ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-accent"}`}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {disposition !== "not_sold" && (
+            <div className="space-y-3 pt-1">
+              <div>
+                <Label className="text-xs">Customer *</Label>
+                <Select value={disposeCustomer} onValueChange={setDisposeCustomer}>
+                  <SelectTrigger data-testid="dispose-customer-select" className="bg-white"><SelectValue placeholder="Select customer" /></SelectTrigger>
+                  <SelectContent>{customers.map((c) => <SelectItem key={c._id} value={c.name}>{c.name}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+
+              {disposition === "fully_sold" ? (
+                <p className="text-xs text-muted-foreground">The full purchased quantity of every item will be sold to this customer.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Quantity sold per item</Label>
+                  {disposeItems.map((it) => (
+                    <div key={it.sku || it.id} className="grid grid-cols-12 gap-2 items-center">
+                      <span className="col-span-6 text-sm truncate">{it.name}</span>
+                      <span className="col-span-2 text-xs text-muted-foreground text-right">of {it.qty}</span>
+                      <Input type="number" min="0" max={it.qty} placeholder="0" data-testid={`dispose-qty-${it.sku}`}
+                        value={disposeQtys[it.sku] || ""} onChange={(e) => setDisposeQtys((q) => ({ ...q, [it.sku]: e.target.value }))}
+                        className="col-span-4 bg-white h-8" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDisposeOpen(false)}>Skip</Button>
+            <Button onClick={submitDisposition} disabled={disposing} data-testid="submit-dispose-btn" className="rounded-full">
+              {disposing ? "Saving…" : disposition === "not_sold" ? "Done" : "Create Sale & Invoice"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

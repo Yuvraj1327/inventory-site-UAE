@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import * as XLSX from "xlsx";
 import { api, money, fmtDate, formatApiError } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -177,6 +178,19 @@ export default function Orders() {
     await api.delete(`/orders/${linesOrder._id}/lines/${line._id}`);
     const r = await api.get(`/orders/${linesOrder._id}/lines`);
     setLines(r.data);
+  };
+
+  const exportLinesExcel = () => {
+    if (!lines.length) { toast.error("No lines to export"); return; }
+    const data = lines.map((li) => ({
+      "#": li.line_no, "Part Number": li.part_number, "Description": li.description || "",
+      "Order Qty": li.order_qty, "Confirm Qty": li.confirm_qty, "Cancelled Qty": li.cancelled_qty,
+      "Shipped Qty": li.shipped_qty, "Unit Price": li.unit_selling_price, "Amount": li.amount, "Status": li.status,
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Order Lines");
+    XLSX.writeFile(wb, `${linesOrder?.order_number || "order"}-lines.xlsx`);
   };
 
   const payloadFrom = (f) => {
@@ -451,6 +465,7 @@ export default function Orders() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="sticky left-0 bg-white z-10">Order No.</TableHead>
+                  <TableHead></TableHead>
                   <TableHead>Progress</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>LPO Ref</TableHead>
@@ -471,7 +486,6 @@ export default function Orders() {
                   <TableHead>Delivery</TableHead>
                   <TableHead>Del. Note</TableHead>
                   <TableHead className="text-center">Closed</TableHead>
-                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -491,6 +505,16 @@ export default function Orders() {
                           {over && <Warning size={14} weight="fill" className="text-destructive" />}
                           {o.order_number}
                         </span>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => openLines(o)} data-testid={`lines-order-${o._id}`}
+                            title="Order lines" className="text-muted-foreground hover:text-primary transition-colors"><ListNumbers size={16} /></button>
+                          <button onClick={() => openEdit(o)} data-testid={`edit-order-${o._id}`}
+                            className="text-muted-foreground hover:text-primary transition-colors"><PencilSimple size={16} /></button>
+                          <button onClick={() => remove(o._id)} data-testid={`del-order-${o._id}`}
+                            className="text-muted-foreground hover:text-destructive transition-colors"><Trash size={16} /></button>
+                        </div>
                       </TableCell>
                       <TableCell><ProgressBadge done={done} /></TableCell>
                       <TableCell className="whitespace-nowrap">{o.customer || "—"}</TableCell>
@@ -527,16 +551,6 @@ export default function Orders() {
                           </button>
                         )}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => openLines(o)} data-testid={`lines-order-${o._id}`}
-                            title="Order lines" className="text-muted-foreground hover:text-primary transition-colors"><ListNumbers size={16} /></button>
-                          <button onClick={() => openEdit(o)} data-testid={`edit-order-${o._id}`}
-                            className="text-muted-foreground hover:text-primary transition-colors"><PencilSimple size={16} /></button>
-                          <button onClick={() => remove(o._id)} data-testid={`del-order-${o._id}`}
-                            className="text-muted-foreground hover:text-destructive transition-colors"><Trash size={16} /></button>
-                        </div>
-                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -547,8 +561,15 @@ export default function Orders() {
       </Card>
 
       <Dialog open={linesOpen} onOpenChange={setLinesOpen}>
-        <DialogContent className="bg-white max-w-3xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader><DialogTitle style={{ fontFamily: "Manrope" }}>Order Lines — {linesOrder?.order_number}</DialogTitle></DialogHeader>
+        <DialogContent className="bg-white max-w-6xl max-h-[88vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center justify-between pr-8">
+              <DialogTitle style={{ fontFamily: "Manrope" }}>Order Lines — {linesOrder?.order_number}</DialogTitle>
+              <Button variant="outline" size="sm" onClick={exportLinesExcel} data-testid="export-lines-excel-btn" className="gap-1.5">
+                <DownloadSimple size={14} /> Export Excel
+              </Button>
+            </div>
+          </DialogHeader>
 
           <div className="flex items-end gap-3 bg-muted/40 rounded-lg p-3">
             <div className="flex-1">

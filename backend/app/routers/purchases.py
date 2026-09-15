@@ -12,6 +12,9 @@ from app.services.compat import with_legacy_id, clean_list, now_iso, find_party_
 from app.services.audit import log_action
 from app.services.ai_provider import get_extraction_provider
 from app.services.file_storage import save_purchase_invoice, read_purchase_invoice
+from app.routers.orders import OrderCreate, create_order
+from app.routers.order_lines import LineCreate as OrderLineCreate, LineUpdate as OrderLineUpdate, add_line as add_order_line, update_line as update_order_line
+from app.routers.invoices import InvoiceCreate, InvoiceItem, create_invoice
 
 router = APIRouter(prefix="/api/purchases", tags=["purchases"])
 
@@ -29,6 +32,19 @@ class PurchaseCreate(BaseModel):
     date: Optional[str] = None
     items: List[PurchaseItem] = []
     notes: str = ""
+
+
+class DisposeLine(BaseModel):
+    part_number: str
+    description: str = ""
+    unit_cost: float = 0.0
+    qty_sold: float = 0.0
+
+
+class DisposeReq(BaseModel):
+    disposition: str  # "fully_sold" | "partially_sold" | "not_sold"
+    customer: str = ""
+    lines: List[DisposeLine] = []
 
 
 def _to_legacy(purchase: dict, lines: list[dict]) -> dict:
@@ -122,6 +138,83 @@ async def create_purchase(payload: PurchaseCreate, staff=Depends(require_staff_o
 
     lines = sb.table("purchase_lines").select("*").eq("purchase_id", purchase["id"]).execute().data or []
     return _to_legacy(purchase, lines)
+
+
+@router.post("/{pid}/dispose")
+async def dispose_purchase(pid: str, payload: DisposeReq, staff=Depends(require_staff_or_admin)):
+    """
+    The "Are these goods already sold?" prompt shown right after a Quick
+    Purchase is saved. Deliberately reuses the real order/invoice
+    creation logic (create_order, add_order_line, update_order_line,
+    create_invoice) rather than re-implementing pricing, stock checks,
+    or invoice numbering — this is the exact same code path a staff
+    member would go through manually via Orders Follow-Up + Invoices.
+
+    not_sold: no-op. The Quick Purchase already put the full quantity
+    into available inventory when it was saved; there's nothing further
+    to do.
+
+    fully_sold / partially_sold: for the sold quantity on each line,
+    creates one sales order (status already Shipped, since the goods
+    are already sold) and one invoice for the given customer, at that
+    customer's own margin_percent (the same pricing rule every other
+    sale in the system already uses). Invoice creation itself deducts
+    the sold quantity from available inventory — since the Quick
+    Purchase already added the full received quantity, the remainder
+    is left correctly in stock with no special-case arithmetic needed.
+    """
+    if payload.disposition not in ("fully_sold", "partially_sold", "not_sold"):
+        raise HTTPException(status_code=400, detail="disposition must be 'fully_sold', 'partially_sold', or 'not_sold'")
+    if payload.disposition == "not_sold":
+        return {"ok": True, "disposition": "not_sold"}
+
+    sb = get_service_client()
+    purchase = sb.table("purchases").select("*").eq("id", pid).execute().data
+    if not purchase:
+        raise HTTPException(status_code=404, detail="Purchase not found")
+    purchase = purchase[0]
+
+    if not payload.customer.strip():
+        raise HTTPException(status_code=400, detail="Select a customer for the sold goods")
+    sold_lines = [li for li in payload.lines if li.qty_sold and li.qty_sold > 0]
+    if not sold_lines:
+        raise HTTPException(status_code=400, detail="No sold quantity given for any line")
+
+    # 1. Sales order — reuses the exact same creation path Orders Follow-Up uses.
+    order_number = f"PSO-{purchase['id'][:8].upper()}"
+    order = await create_order(OrderCreate(
+        order_number=order_number, customer=payload.customer,
+        status="shipped", notes=f"Auto-created from Purchase {purchase.get('purchase_ref') or pid[:8]} ({payload.disposition})",
+    ), staff)
+    order_id = order["id"]
+
+    invoice_items = []
+    for li in sold_lines:
+        # add_order_line looks the product up itself and prices it at this
+        # customer's own margin_percent — the same rule every manually
+        # created order line already follows.
+        line = await add_order_line(order_id, OrderLineCreate(part_number=li.part_number, order_qty=li.qty_sold), staff)
+        await update_order_line(order_id, line["id"], OrderLineUpdate(
+            confirm_qty=li.qty_sold, shipped_qty=li.qty_sold, status="Shipped",
+        ), staff)
+        invoice_items.append(InvoiceItem(
+            product_id=line.get("product_id"), name=line.get("description") or li.description,
+            sku=li.part_number, qty=li.qty_sold, unit_price=line.get("unit_selling_price") or 0,
+        ))
+
+    # 2. Invoice — reuses create_invoice() directly: same stock check,
+    #    same totals math, same inventory deduction every other invoice uses.
+    invoice_number = f"PSI-{purchase['id'][:8].upper()}"
+    invoice = await create_invoice(InvoiceCreate(
+        invoice_number=invoice_number, customer=payload.customer, items=invoice_items,
+        status="unpaid", notes=f"Auto-generated: goods {payload.disposition.replace('_', ' ')} from Purchase {purchase.get('purchase_ref') or pid[:8]}",
+    ), staff)
+
+    log_action(sb, staff.get("id"), "purchase.dispose", "purchase", pid, {
+        "disposition": payload.disposition, "customer": payload.customer,
+        "order_id": order_id, "invoice_id": invoice.get("id"),
+    })
+    return {"ok": True, "disposition": payload.disposition, "order": order, "invoice": invoice}
 
 
 @router.delete("/{pid}")
