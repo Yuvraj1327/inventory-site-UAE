@@ -79,15 +79,20 @@ export default function Purchases() {
 
   // ---------- Quick entry (unchanged Phase 2 behavior) ----------
   const openNew = () => { setSupplier(""); setRef(""); setItems([{ ...emptyItem }]); setOpen(true); };
+  // Keeps ?new=1 in the URL while the dialog is open so the sidebar can tell
+  // "New Order" and "Purchases" apart and highlight the right one.
+  const closeNew = () => {
+    setOpen(false);
+    if (searchParams.get("new") === "1") {
+      searchParams.delete("new");
+      setSearchParams(searchParams, { replace: true });
+    }
+  };
 
   // Sidebar's "New Order" (Inventory group) deep-links here with ?new=1 to
   // land straight in this same quick-entry flow instead of the plain list.
   useEffect(() => {
-    if (searchParams.get("new") === "1") {
-      openNew();
-      searchParams.delete("new");
-      setSearchParams(searchParams, { replace: true });
-    }
+    if (searchParams.get("new") === "1") openNew();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
   const setItem = (i, key, val) => setItems(items.map((it, idx) => (idx === i ? { ...it, [key]: val } : it)));
@@ -105,7 +110,7 @@ export default function Purchases() {
         items: valid.map((it) => ({ name: it.name, sku: it.sku, qty: num(it.qty), unit_cost: num(it.unit_cost) })),
       });
       toast.success("Purchase recorded, stock updated");
-      setOpen(false); load();
+      closeNew(); load();
       // Ask what happened to the goods, using the purchase exactly as saved
       // (server-confirmed items, not the local draft) so quantities match.
       setSavedPurchase(res.data);
@@ -346,12 +351,12 @@ export default function Purchases() {
             </DialogContent>
           </Dialog>
 
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : closeNew())}>
             <DialogTrigger asChild>
               <Button data-testid="add-purchase-btn" onClick={openNew} className="rounded-full gap-2"><Plus size={18} weight="bold" /> Quick Purchase</Button>
             </DialogTrigger>
             <DialogContent className="bg-white max-w-2xl max-h-[88vh] overflow-y-auto">
-              <DialogHeader><DialogTitle style={{ fontFamily: "Manrope" }}>Quick Purchase</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle style={{ fontFamily: "Manrope" }}>New Order</DialogTitle></DialogHeader>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs">Supplier</Label>

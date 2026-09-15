@@ -62,6 +62,11 @@ function Brand({ collapsed }) {
 }
 
 function NavList({ collapsed, onNavigate }) {
+  const loc = useLocation();
+  // NavLink's own isActive only looks at pathname, so "New Order" (/purchases?new=1)
+  // and "Purchases" (/purchases) would both light up together. Resolve the one
+  // collision explicitly using the "new" query param instead.
+  const isNewOrderQuery = new URLSearchParams(loc.search).get("new") === "1";
   return (
     <nav className="flex-1 px-2.5 py-3 space-y-4 overflow-y-auto overflow-x-hidden">
       {NAV_GROUPS.map((group) => (
@@ -72,6 +77,9 @@ function NavList({ collapsed, onNavigate }) {
           <div className="space-y-0.5">
             {group.items.map((n) => {
               const Icon = n.icon;
+              const [toPath, toQuery] = n.to.split("?");
+              const pathActive = n.end ? loc.pathname === toPath : loc.pathname.startsWith(toPath);
+              const isActive = toPath === "/purchases" ? pathActive && (toQuery ? isNewOrderQuery : !isNewOrderQuery) : pathActive;
               return (
                 <NavLink
                   key={n.to}
@@ -80,13 +88,11 @@ function NavList({ collapsed, onNavigate }) {
                   onClick={onNavigate}
                   data-testid={`nav-${n.id}`}
                   title={collapsed ? n.label : undefined}
-                  className={({ isActive }) =>
-                    `flex items-center gap-2.5 rounded-md text-[13px] font-medium transition-colors ${collapsed ? "justify-center px-2 py-2" : "px-2.5 py-1.5"} ${
-                      isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "text-foreground/70 hover:bg-accent hover:text-foreground"
-                    }`
-                  }
+                  className={`flex items-center gap-2.5 rounded-md text-[13px] font-medium transition-colors ${collapsed ? "justify-center px-2 py-2" : "px-2.5 py-1.5"} ${
+                    isActive
+                      ? "bg-primary text-primary-foreground"
+                      : "text-foreground/70 hover:bg-accent hover:text-foreground"
+                  }`}
                 >
                   <Icon size={16} weight="duotone" className="shrink-0" />
                   {!collapsed && <span className="truncate">{n.label}</span>}
