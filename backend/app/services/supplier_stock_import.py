@@ -27,6 +27,7 @@ and no other product/inventory row is affected at all.
 import csv
 import io
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -55,6 +56,76 @@ REQUIRED_MAPPED_COLUMNS = {"item_code"}
 
 def _normalize_header(h) -> str:
     return str(h or "").strip().lower()
+
+
+# Cells that mean "no value" for a numeric column even though they aren't
+# Python None or "" — suppliers commonly use these as Weight/AvailableQty/
+# Price placeholders instead of leaving the cell truly empty.
+_BLANK_NUMERIC_TOKENS = {"", "-", "--", "n/a", "na", "none", "null", "nil"}
+# Currency symbols/codes (Item Price AED) and weight units (Weight is
+# frequently exported as e.g. "0.002 KG" rather than a bare number).
+_UNIT_OR_CURRENCY_TOKEN_RE = re.compile(r"(?i)\b(aed|dhs|dh|usd|kgs?|gms?|grams?|lbs?|pounds?)\b|[$€£]")
+# Only matches unambiguous thousands-grouped numbers (e.g. "1,250" or
+# "12,345.67") so we don't mangle a locale where "," is a decimal separator.
+_THOUSANDS_GROUPED_RE = re.compile(r"^-?\d{1,3}(,\d{3})+(\.\d+)?$")
+# A number_format made up only of zeros (e.g. "0000000000") means Excel is
+# displaying a zero-padded code while storing the plain integer.
+_ZERO_PAD_FORMAT_RE = re.compile(r"^0+$")
+
+
+def _normalize_item_code(v) -> str:
+    """
+    Excel/openpyxl returns numeric-looking ItemCodes as int/float, not the
+    original text — e.g. a "General"-formatted cell containing 12345 comes
+    back as the float 12345.0, which str()'s to "12345.0" and would never
+    equal a text part_number of "12345". Collapse whole-number floats back
+    to plain integers before stringifying, and strip stray whitespace
+    (including non-breaking spaces some exports embed) so a code doesn't
+    fail to match purely because of formatting noise introduced by Excel.
+    """
+    if v is None:
+        return ""
+    if isinstance(v, float) and v.is_integer():
+        v = int(v)
+    return str(v).replace("\xa0", " ").strip()
+
+
+def _clean_numeric_cell(v):
+    """
+    Returns a value safe to pass to float(), or None if the cell represents
+    "no value" (blank, whitespace-only, or a common placeholder like "-" or
+    "N/A"). Genuinely malformed values are returned unchanged so they still
+    fail validation loudly instead of being silently coerced.
+    """
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return v
+    s = str(v).replace("\xa0", " ").strip()
+    if s.lower() in _BLANK_NUMERIC_TOKENS:
+        return None
+    cleaned = _UNIT_OR_CURRENCY_TOKEN_RE.sub("", s).strip()
+    if _THOUSANDS_GROUPED_RE.match(cleaned):
+        cleaned = cleaned.replace(",", "")
+    return cleaned
+
+
+def _resolve_item_code_cell(cell) -> str:
+    """
+    Recovers zero-padded numeric ItemCodes. Excel can display an all-digit
+    code like "0041595803" via a custom "0000000000" number format while
+    the underlying stored value is the plain integer 41595803 — openpyxl
+    returns that raw value, not the display string, so without this the
+    leading zeros are silently lost and the code can never match the text
+    Part Number in the database. Falls back to normal normalization for
+    ordinary text/numeric codes.
+    """
+    value = cell.value if cell is not None else None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        fmt = cell.number_format or ""
+        if _ZERO_PAD_FORMAT_RE.match(fmt) and float(value).is_integer():
+            return str(int(value)).zfill(len(fmt))
+    return _normalize_item_code(value)
 
 
 async def save_import_file(file: UploadFile) -> str:
@@ -107,10 +178,11 @@ def _fail(errors: list, row_no: int, item_code: str, reason: str):
 
 
 def _parse_number(v, field: str, row_no: int, item_code: str, errors: list):
-    if v is None or v == "":
+    cleaned = _clean_numeric_cell(v)
+    if cleaned is None or cleaned == "":
         return None
     try:
-        n = float(v)
+        n = float(cleaned)
     except (TypeError, ValueError):
         _fail(errors, row_no, item_code, f"{field} is not a valid number ('{v}')")
         return "invalid"
@@ -124,10 +196,14 @@ def _iter_mapped_rows(path: Path):
     wb = load_workbook(path, read_only=True, data_only=True)
     try:
         ws = wb.worksheets[0]
-        rows_iter = ws.iter_rows(values_only=True)
-        header = next(rows_iter, None)
-        if not header:
+        # Cell objects (not values_only) are needed so the ItemCode column
+        # can inspect number_format and recover zero-padded codes; this is
+        # still the streaming reader, so memory behavior is unchanged.
+        rows_iter = ws.iter_rows()
+        header_cells = next(rows_iter, None)
+        if not header_cells:
             raise HTTPException(status_code=400, detail="The file has no header row.")
+        header = [c.value for c in header_cells]
         col_index = {}
         for i, h in enumerate(header):
             key = COLUMN_ALIASES.get(_normalize_header(h))
@@ -138,21 +214,25 @@ def _iter_mapped_rows(path: Path):
             raise HTTPException(status_code=400, detail=f"Missing required column(s): {', '.join(sorted(missing))}. Detected headers: {[str(h) for h in header]}")
 
         row_no = 1
-        for raw in rows_iter:
+        for row_cells in rows_iter:
             row_no += 1
-            if raw is None or all(c is None or str(c).strip() == "" for c in raw):
+            if row_cells is None or all(c.value is None or str(c.value).strip() == "" for c in row_cells):
                 continue
 
-            def get(key):
+            def get_cell(key):
                 idx = col_index.get(key)
-                return raw[idx] if idx is not None and idx < len(raw) else None
+                return row_cells[idx] if idx is not None and idx < len(row_cells) else None
+
+            def get_value(key):
+                cell = get_cell(key)
+                return cell.value if cell is not None else None
 
             yield row_no, {
-                "item_code": get("item_code"),
-                "description": get("description"),
-                "weight": get("weight"),
-                "available_qty": get("available_qty"),
-                "unit_cost": get("unit_cost"),
+                "item_code": _resolve_item_code_cell(get_cell("item_code")),
+                "description": get_value("description"),
+                "weight": get_value("weight"),
+                "available_qty": get_value("available_qty"),
+                "unit_cost": get_value("unit_cost"),
             }, [str(h) for h in header]
     finally:
         wb.close()
@@ -168,7 +248,7 @@ def _validate_rows(path: Path):
 
     for row_no, mapped, headers in _iter_mapped_rows(path):
         detected_headers = detected_headers or headers
-        code = str(mapped["item_code"] or "").strip()
+        code = _normalize_item_code(mapped["item_code"])
         if not code:
             _fail(errors, row_no, "", "Missing ItemCode")
             continue
@@ -189,7 +269,7 @@ def _validate_rows(path: Path):
 
         by_item_code[code] = {
             "row": row_no, "item_code": code,
-            "description": str(mapped["description"] or "").strip(),
+            "description": str(mapped["description"] or "").replace("\xa0", " ").strip(),
             "weight": weight, "available_qty": qty, "unit_cost": price,
         }
 
