@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Cube, Trash, PencilSimple, WarningCircle, ShoppingCart, UploadSimple, Database } from "@phosphor-icons/react";
+import { Plus, Cube, Trash, PencilSimple, WarningCircle, ShoppingCart, UploadSimple, Database, FileXls } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const empty = { name: "", sku: "", stock: "", unit_cost: "", unit_price: "", low_stock_threshold: "5" };
@@ -121,6 +121,9 @@ export default function Inventory() {
         <div className="flex items-center gap-2">
         <Button variant="secondary" onClick={() => navigate("/inventory/import")} data-testid="import-products-nav-btn" className="rounded-full gap-2">
           <Database size={18} weight="duotone" /> Import Products
+        </Button>
+        <Button variant="secondary" onClick={() => navigate("/inventory/supplier-stock-import")} data-testid="import-supplier-stock-nav-btn" className="rounded-full gap-2">
+          <FileXls size={18} weight="duotone" /> Import Supplier Stock
         </Button>
         <input ref={uploadRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" data-testid="product-upload-input" onChange={(e) => doUpload(e.target.files[0])} />
         <Button variant="secondary" onClick={() => uploadRef.current?.click()} data-testid="upload-products-btn" className="rounded-full gap-2">

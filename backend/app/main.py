@@ -10,6 +10,7 @@ from app.routers import (
     auth, admin_users, parties, products, orders, order_lines, purchases,
     invoices, transactions, dashboard, reminders, portal, ai_stub,
     lost_sales, supplier_monitoring, ai_agent, traffic, accounting, payments, product_import,
+    supplier_stock_import,
 )
 
 app = FastAPI(title="Ledgerly ERP API")
@@ -35,6 +36,7 @@ app.include_router(traffic.router)
 app.include_router(accounting.router)
 app.include_router(payments.router)
 app.include_router(product_import.router)
+app.include_router(supplier_stock_import.router)
 
 
 @app.get("/api/")

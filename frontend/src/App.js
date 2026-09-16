@@ -26,6 +26,7 @@ const Chat = lazy(() => import("@/pages/Chat"));
 const Reminders = lazy(() => import("@/pages/Reminders"));
 const Inventory = lazy(() => import("@/pages/Inventory"));
 const ImportProducts = lazy(() => import("@/pages/ImportProducts"));
+const ImportSupplierStock = lazy(() => import("@/pages/ImportSupplierStock"));
 const Purchases = lazy(() => import("@/pages/Purchases"));
 const Invoices = lazy(() => import("@/pages/Invoices"));
 const Portal = lazy(() => import("@/pages/Portal"));
@@ -65,6 +66,7 @@ function App() {
                 <Route path="orders" element={<Orders />} />
                 <Route path="inventory" element={<Inventory />} />
                 <Route path="inventory/import" element={<ImportProducts />} />
+                <Route path="inventory/supplier-stock-import" element={<ImportSupplierStock />} />
                 <Route path="purchases" element={<Purchases />} />
                 <Route path="invoices" element={<Invoices />} />
                 <Route path="accounting" element={<Accounting />} />
