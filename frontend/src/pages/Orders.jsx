@@ -19,6 +19,7 @@ import {
   ListNumbers, LockSimple, LockSimpleOpen, ArrowsClockwise,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import { useConfirmDelete } from "@/hooks/useConfirmDelete";
 
 const OVERDUE_DAYS = 7;
 const CHECK_KEYS = ["pricing_status", "pi_status", "supplier_pkl", "customer_pkl", "delivery_status"];
@@ -97,6 +98,7 @@ function Check({ value }) {
 const num_cols = "text-right font-mono tabular whitespace-nowrap";
 
 export default function Orders() {
+  const { requestDelete, ConfirmDeleteDialog } = useConfirmDelete();
   const [rows, setRows] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -512,7 +514,7 @@ export default function Orders() {
                             title="Order lines" className="text-muted-foreground hover:text-primary transition-colors"><ListNumbers size={16} /></button>
                           <button onClick={() => openEdit(o)} data-testid={`edit-order-${o._id}`}
                             className="text-muted-foreground hover:text-primary transition-colors"><PencilSimple size={16} /></button>
-                          <button onClick={() => remove(o._id)} data-testid={`del-order-${o._id}`}
+                          <button onClick={() => requestDelete(o.order_number, () => remove(o._id))} data-testid={`del-order-${o._id}`}
                             className="text-muted-foreground hover:text-destructive transition-colors"><Trash size={16} /></button>
                         </div>
                       </TableCell>
@@ -637,6 +639,7 @@ export default function Orders() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDeleteDialog />
     </div>
   );
 }

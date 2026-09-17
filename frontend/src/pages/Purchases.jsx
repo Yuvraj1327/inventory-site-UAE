@@ -14,6 +14,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Truck, Trash, UploadSimple, Scan, X, FileText, CheckCircle, CaretUpDown, Check, FileXls } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import { useConfirmDelete } from "@/hooks/useConfirmDelete";
 
 const emptyItem = { name: "", sku: "", qty: "", unit_cost: "" };
 const emptyConfirmItem = { part_number: "", description: "", qty: "", unit_cost: "" };
@@ -26,6 +27,7 @@ const STATUS_TONE = {
 };
 
 export default function Purchases() {
+  const { requestDelete, ConfirmDeleteDialog } = useConfirmDelete();
   const [searchParams, setSearchParams] = useSearchParams();
   const [rows, setRows] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -449,7 +451,7 @@ export default function Purchases() {
                         <button onClick={() => openReceive(p)} data-testid={`receive-purchase-${p._id}`}
                           title="Receive goods" className="text-muted-foreground hover:text-success transition-colors"><CheckCircle size={16} /></button>
                       )}
-                      <button onClick={() => remove(p._id)} data-testid={`del-purchase-${p._id}`} className="text-muted-foreground hover:text-destructive"><Trash size={16} /></button>
+                      <button onClick={() => requestDelete(p.supplier_invoice_number || p.ref || "this purchase", () => remove(p._id))} data-testid={`del-purchase-${p._id}`} className="text-muted-foreground hover:text-destructive"><Trash size={16} /></button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -563,6 +565,7 @@ export default function Purchases() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDeleteDialog />
     </div>
   );
 }

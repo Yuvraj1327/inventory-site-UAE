@@ -19,6 +19,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Plus, Trash, FileText, UsersThree, Truck, FilePdf, Key, CaretDown, X } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import { useConfirmDelete } from "@/hooks/useConfirmDelete";
+import { RefreshButton } from "@/components/RefreshButton";
 
 const BRANDS = [
   "Toyota", "Lexus", "Honda", "Nissan", "Mitsubishi", "Mazda", "Suzuki", "Isuzu", "Subaru",
@@ -42,7 +44,7 @@ const makeLpo = (name, phone) => {
 const emptyForm = {
   name: "", company: "", email: "", mobile: "", whatsapp: "", phone: "",
   office_address: "", country: "", city: "", brand_focus: "", special_note: "",
-  tax_registration_number: "", is_walkin: false,
+  tax_registration_number: "", is_walkin: false, margin_percent: "", currency: "AED",
 };
 
 // brand_focus stays a single comma-separated text field on the backend
@@ -52,6 +54,7 @@ const brandsFromField = (v) => (v ? v.split(",").map((s) => s.trim()).filter(Boo
 const brandsToField = (arr) => arr.join(", ");
 
 export default function Parties({ kind }) {
+  const { requestDelete, ConfirmDeleteDialog } = useConfirmDelete();
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -178,6 +181,8 @@ export default function Parties({ kind }) {
           <div className="text-xs uppercase tracking-[0.2em] font-semibold text-muted-foreground">Directory</div>
           <h1 className="text-5xl tracking-tight font-bold mt-1" style={{ fontFamily: "Manrope" }}>{title}</h1>
         </div>
+        <div className="flex items-center gap-2">
+        <RefreshButton onRefresh={load} testid={`${kind}-refresh-btn`} iconOnly />
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button data-testid={`add-${kind}-btn`} className="rounded-full gap-2"><Plus size={18} weight="bold" /> Add {kind}</Button>
@@ -303,11 +308,31 @@ export default function Parties({ kind }) {
                   <Input data-testid="customer-address-input" value={form.office_address} onChange={(e) => setForm({ ...form, office_address: e.target.value })} className="bg-white" /></div>
                 <div><Label className="text-xs">Special Note</Label>
                   <Textarea data-testid="customer-note-input" value={form.special_note} onChange={(e) => setForm({ ...form, special_note: e.target.value })} className="bg-white" /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs">Margin % (applied to cost for pricing)</Label>
+                    <Input data-testid="customer-margin-input" type="number" min="0" max="100" step="0.1"
+                      value={form.margin_percent}
+                      onChange={(e) => setForm({ ...form, margin_percent: e.target.value })}
+                      placeholder="e.g. 20" className="bg-white" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Invoice Currency</Label>
+                    <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v })}>
+                      <SelectTrigger data-testid="customer-currency-select" className="bg-white"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="AED">AED — UAE Dirham</SelectItem>
+                        <SelectItem value="USD">USD — US Dollar</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
             )}
             <DialogFooter><Button onClick={save} data-testid={`save-${kind}-btn`} className="rounded-full">Save</Button></DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <Card className="bg-white border-border/60 shadow-sm rounded-xl overflow-hidden">
@@ -330,6 +355,7 @@ export default function Parties({ kind }) {
                       <TableHead>Country / City</TableHead>
                       <TableHead>Brand</TableHead>
                       <TableHead>Mobile</TableHead>
+                      <TableHead>Margin % / Currency</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </>
                   ) : (
@@ -355,6 +381,16 @@ export default function Parties({ kind }) {
                         <TableCell className="text-muted-foreground whitespace-nowrap">{[p.city, p.country].filter(Boolean).join(", ") || "—"}</TableCell>
                         <TableCell className="whitespace-nowrap">{p.brand_focus || "—"}</TableCell>
                         <TableCell className="text-muted-foreground whitespace-nowrap">{p.mobile || p.phone || "—"}</TableCell>
+                        {kind === "customer" && (
+                          <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                            {p.margin_percent != null && p.margin_percent !== "" && p.margin_percent !== 0
+                              ? `${p.margin_percent}%`
+                              : "—"}
+                            {p.currency && p.currency !== "AED" && (
+                              <span className="ml-1.5 text-[10px] bg-primary/10 text-primary rounded px-1">{p.currency}</span>
+                            )}
+                          </TableCell>
+                        )}
                       </>
                     ) : (
                       <>
@@ -382,8 +418,8 @@ export default function Parties({ kind }) {
                           className="text-sm text-primary hover:underline flex items-center gap-1.5">
                           <FileText size={16} weight="duotone" /> Statement
                         </button>
-                        <button onClick={() => remove(p._id)} data-testid={`del-${kind}-${p._id}`}
-                          className="text-muted-foreground hover:text-destructive transition-colors"><Trash size={17} /></button>
+                        <button onClick={() => requestDelete(p.name, () => remove(p._id))} data-testid={`del-${kind}-${p._id}`}
+                           className="text-muted-foreground hover:text-destructive transition-colors"><Trash size={17} /></button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -501,6 +537,7 @@ export default function Parties({ kind }) {
           <DialogFooter><Button onClick={createLogin} data-testid="create-login-btn" className="rounded-full">Create Login</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDeleteDialog />
     </div>
   );
 }

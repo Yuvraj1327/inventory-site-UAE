@@ -15,6 +15,8 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Plus, Receipt, Trash, ArrowDownLeft, ArrowUpRight, Money } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import { useConfirmDelete } from "@/hooks/useConfirmDelete";
+import { RefreshButton } from "@/components/RefreshButton";
 
 const EXPENSE_CATS = [
   "Office Supplies", "Rent", "Utilities", "Salaries & Wages", "Marketing", "Travel",
@@ -29,6 +31,7 @@ const MODES = [
 ];
 
 export default function Transactions() {
+  const { requestDelete, ConfirmDeleteDialog } = useConfirmDelete();
   const [rows, setRows] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -88,6 +91,8 @@ export default function Transactions() {
           <div className="text-xs uppercase tracking-[0.2em] font-semibold text-muted-foreground">Bookkeeping</div>
           <h1 className="text-5xl tracking-tight font-bold mt-1" style={{ fontFamily: "Manrope" }}>Transactions</h1>
         </div>
+        <div className="flex items-center gap-2">
+        <RefreshButton onRefresh={load} testid="txn-refresh-btn" iconOnly />
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button data-testid="add-transaction-btn" onClick={openNew} className="rounded-full gap-2"><Plus size={18} weight="bold" /> New Transaction</Button>
@@ -170,6 +175,7 @@ export default function Transactions() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <Card className="bg-white border-border/60 shadow-sm rounded-xl overflow-hidden">
@@ -208,7 +214,7 @@ export default function Transactions() {
                     {t.type === "income" ? "+" : "−"}${money(t.amount)}
                   </TableCell>
                   <TableCell className="text-right">
-                    <button onClick={() => remove(t._id)} data-testid={`del-txn-${t._id}`}
+                    <button onClick={() => requestDelete(`transaction on ${fmtDate(t.date)}`, () => remove(t._id))} data-testid={`del-txn-${t._id}`}
                       className="text-muted-foreground hover:text-destructive transition-colors">
                       <Trash size={17} />
                     </button>
@@ -220,6 +226,7 @@ export default function Transactions() {
           </div>
         )}
       </Card>
+      <ConfirmDeleteDialog />
     </div>
   );
 }

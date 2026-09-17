@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api", tags=["parties"])
 CUSTOMER_COLUMNS = {
     "name", "company", "brand_focus", "is_walkin", "tax_registration_number", "country", "city",
     "office_address", "phone", "mobile", "whatsapp", "email",
-    "payment_terms_days", "margin_percent", "special_note",
+    "payment_terms_days", "margin_percent", "special_note", "currency",
 }
 SUPPLIER_COLUMNS = {
     "name", "country", "city", "office_address", "phone", "mobile", "whatsapp",
@@ -48,6 +48,7 @@ class PartyCreate(BaseModel):
     tax_registration_number: Optional[str] = None
     margin_percent: float = 0.0
     payment_terms_days: int = 0
+    currency: str = "AED"  # display-only preference: 'AED' | 'USD'
 
 
 def _table_for(kind: str) -> str:
