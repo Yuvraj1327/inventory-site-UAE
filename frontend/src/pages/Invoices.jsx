@@ -1,213 +1,266 @@
-import { useEffect, useState } from "react";
-import { api, money, fmtDate } from "@/lib/api";
-import { printInvoice } from "@/lib/pdf";
+import { useEffect, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { api, money } from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Receipt, Trash, FilePdf, X, PencilSimple, CheckCircle, ArrowUUpLeft, FileXls } from "@phosphor-icons/react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Plus, Cube, Trash, PencilSimple, WarningCircle, ShoppingCart, UploadSimple, Database, FileXls } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
+const empty = { name: "", sku: "", stock: "", unit_cost: "", weight: "", low_stock_threshold: "5" };
 const num = (v) => parseFloat(v || 0) || 0;
 
-export default function Invoices() {
+export default function Inventory() {
+  const navigate = useNavigate();
   const [rows, setRows] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [customers, setCustomers] = useState([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ invoice_number: "", customer: "", tax_percent: "0", status: "unpaid" });
-  const [items, setItems] = useState([{ product_id: "", name: "", sku: "", qty: "1", unit_price: "" }]);
-  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState(empty);
   const [editId, setEditId] = useState(null);
+  const [reorderOpen, setReorderOpen] = useState(false);
+  const [reorderSupplier, setReorderSupplier] = useState("");
+  const [reorderQty, setReorderQty] = useState({});
 
-  const load = () => api.get("/invoices").then((r) => setRows(r.data));
-  useEffect(() => {
+  const load = () => api.get("/products").then((r) => setRows(r.data));
+  useEffect(() => { load(); }, []);
+
+  const uploadRef = useRef();
+  const [selected, setSelected] = useState(new Set());
+  const [pageSize, setPageSize] = useState(30);
+  const [page, setPage] = useState(1);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
+  const allOnPageSelected = pageRows.length > 0 && pageRows.every((p) => selected.has(p._id));
+
+  const toggleOne = (id) => {
+    const s = new Set(selected);
+    s.has(id) ? s.delete(id) : s.add(id);
+    setSelected(s);
+  };
+  const toggleAll = () => {
+    const s = new Set(selected);
+    if (allOnPageSelected) pageRows.forEach((p) => s.delete(p._id));
+    else pageRows.forEach((p) => s.add(p._id));
+    setSelected(s);
+  };
+  const bulkDelete = async () => {
+    for (const id of selected) await api.delete(`/products/${id}`);
+    toast.success(`Deleted ${selected.size} item(s)`);
+    setSelected(new Set());
     load();
-    api.get("/products").then((r) => setProducts(r.data));
-    api.get("/parties?kind=customer").then((r) => setCustomers(r.data));
-  }, []);
-
-  const openNew = () => {
-    const n = `INV-${String(rows.length + 1).padStart(4, "0")}`;
-    setForm({ invoice_number: n, customer: "", tax_percent: "0", status: "unpaid" });
-    setItems([{ product_id: "", name: "", sku: "", qty: "1", unit_price: "" }]);
-    setEditId(null);
-    setOpen(true);
+  };
+  const doUpload = async (file) => {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r = await api.post("/products/upload", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success(`Imported ${r.data.imported} products`);
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Upload failed"); }
   };
 
-  const openEdit = (inv) => {
-    setForm({ invoice_number: inv.invoice_number, customer: inv.customer, tax_percent: String(inv.tax_percent || 0), status: inv.status });
-    setItems((inv.items || []).map((it) => ({ product_id: it.product_id || "", name: it.name, sku: it.sku, qty: String(it.qty), unit_price: String(it.unit_price) })));
-    setEditId(inv._id);
-    setOpen(true);
+  const lowItems = rows.filter((p) => p.stock <= (p.low_stock_threshold || 0));
+
+  const openReorder = () => {
+    const q = {};
+    lowItems.forEach((p) => { q[p._id] = Math.max((p.low_stock_threshold || 0) * 2 - p.stock, 1); });
+    setReorderQty(q);
+    setReorderSupplier("");
+    setReorderOpen(true);
   };
 
-  const toggleStatus = async (inv) => {
-    const next = inv.status === "paid" ? "unpaid" : "paid";
-    await api.patch(`/invoices/${inv._id}/status`, { status: next });
-    toast.success(`Marked ${next}`);
-    load();
+  const submitReorder = async () => {
+    const items = lowItems.map((p) => ({ product_id: p._id, qty: num(reorderQty[p._id]) })).filter((i) => i.qty > 0);
+    if (items.length === 0) { toast.error("Set a quantity to reorder"); return; }
+    try {
+      await api.post("/purchases/reorder", { supplier: reorderSupplier, items });
+      toast.success("Purchase created & stock replenished");
+      setReorderOpen(false); load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Reorder failed"); }
   };
 
-  const setItem = (i, patch) => setItems(items.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
-  const pickProduct = (i, pid) => {
-    const p = products.find((x) => x._id === pid);
-    if (p) setItem(i, { product_id: pid, name: p.name, sku: p.sku, unit_price: p.unit_price });
+  const openNew = () => { setForm(empty); setEditId(null); setOpen(true); };
+  const openEdit = (p) => {
+    setForm({ name: p.name, sku: p.sku, stock: p.stock, unit_cost: p.unit_cost, weight: p.weight, low_stock_threshold: p.low_stock_threshold });
+    setEditId(p._id); setOpen(true);
   };
-  const addItem = () => setItems([...items, { product_id: "", name: "", sku: "", qty: "1", unit_price: "" }]);
-  const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
-
-  const subtotal = items.reduce((s, it) => s + num(it.qty) * num(it.unit_price), 0);
-  const tax = subtotal * (num(form.tax_percent) / 100);
-  const total = subtotal + tax;
 
   const save = async () => {
-    if (!form.invoice_number) { toast.error("Invoice number required"); return; }
-    if (!form.customer) { toast.error("Select a customer"); return; }
-    const valid = items.filter((it) => it.name && num(it.qty) > 0);
-    if (valid.length === 0) { toast.error("Add at least one item"); return; }
-    setSaving(true);
-    try {
-      const payload = {
-        invoice_number: form.invoice_number, customer: form.customer,
-        tax_percent: num(form.tax_percent), status: form.status,
-        items: valid.map((it) => ({ product_id: it.product_id, name: it.name, sku: it.sku, qty: num(it.qty), unit_price: num(it.unit_price) })),
-      };
-      if (editId) await api.put(`/invoices/${editId}`, payload);
-      else await api.post("/invoices", payload);
-      toast.success(editId ? "Invoice updated, stock adjusted" : "Invoice created, stock adjusted");
-      setOpen(false); load();
-      api.get("/products").then((r) => setProducts(r.data));
-    } catch (e) { toast.error(e.response?.data?.detail || "Save failed"); }
-    setSaving(false);
+    if (!form.name) { toast.error("Name is required"); return; }
+    const payload = { name: form.name, sku: form.sku, stock: num(form.stock), unit_cost: num(form.unit_cost), weight: form.weight === "" ? null : num(form.weight), low_stock_threshold: num(form.low_stock_threshold) };
+    if (editId) await api.put(`/products/${editId}`, payload);
+    else await api.post("/products", payload);
+    toast.success(editId ? "Product updated" : "Product added");
+    setOpen(false); load();
   };
 
-  const remove = async (id) => { await api.delete(`/invoices/${id}`); load(); };
+  const remove = async (id) => { await api.delete(`/products/${id}`); load(); };
 
-  const downloadExcel = async (inv) => {
-    try {
-      const res = await api.get(`/invoices/${inv._id}/excel`, { responseType: "blob" });
-      const url = URL.createObjectURL(res.data);
-      const a = document.createElement("a");
-      a.href = url; a.download = `invoice-${inv.invoice_number}.xlsx`; a.click();
-      URL.revokeObjectURL(url);
-    } catch { toast.error("Excel export failed"); }
-  };
+  const F = (key, label, type = "text") => (
+    <div>
+      <Label className="text-xs">{label}</Label>
+      <Input data-testid={`product-${key}-input`} type={type} value={form[key]}
+        onChange={(e) => setForm({ ...form, [key]: e.target.value })} className="bg-white" />
+    </div>
+  );
 
   return (
-    <div className="space-y-8" data-testid="invoices-page">
+    <div className="space-y-8" data-testid="inventory-page">
       <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
-          <div className="text-xs uppercase tracking-[0.2em] font-semibold text-muted-foreground">Billing</div>
-          <h1 className="text-5xl tracking-tight font-bold mt-1" style={{ fontFamily: "Manrope" }}>Invoices</h1>
+          <div className="text-xs uppercase tracking-[0.2em] font-semibold text-muted-foreground">Stock</div>
+          <h1 className="text-5xl tracking-tight font-bold mt-1" style={{ fontFamily: "Manrope" }}>Inventory</h1>
         </div>
+        <div className="flex items-center gap-2">
+        <Button variant="secondary" onClick={() => navigate("/inventory/import")} data-testid="import-products-nav-btn" className="rounded-full gap-2">
+          <Database size={18} weight="duotone" /> Import Products
+        </Button>
+        <Button variant="secondary" onClick={() => navigate("/inventory/supplier-stock-import")} data-testid="import-supplier-stock-nav-btn" className="rounded-full gap-2">
+          <FileXls size={18} weight="duotone" /> Import Supplier Stock
+        </Button>
+        <input ref={uploadRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" data-testid="product-upload-input" onChange={(e) => doUpload(e.target.files[0])} />
+        <Button variant="secondary" onClick={() => uploadRef.current?.click()} data-testid="upload-products-btn" className="rounded-full gap-2">
+          <UploadSimple size={18} weight="duotone" /> Upload CSV
+        </Button>
+        {lowItems.length > 0 && (
+          <Button variant="secondary" onClick={openReorder} data-testid="reorder-btn" className="rounded-full gap-2">
+            <ShoppingCart size={18} weight="duotone" /> Reorder ({lowItems.length})
+          </Button>
+        )}
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button data-testid="add-invoice-btn" onClick={openNew} className="rounded-full gap-2"><Plus size={18} weight="bold" /> New Invoice</Button>
+            <Button data-testid="add-product-btn" onClick={openNew} className="rounded-full gap-2"><Plus size={18} weight="bold" /> Add Product</Button>
           </DialogTrigger>
-          <DialogContent className="bg-white max-w-2xl max-h-[88vh] overflow-y-auto">
-            <DialogHeader><DialogTitle style={{ fontFamily: "Manrope" }}>{editId ? "Edit Invoice" : "New Invoice"}</DialogTitle></DialogHeader>
+          <DialogContent className="bg-white">
+            <DialogHeader><DialogTitle style={{ fontFamily: "Manrope" }}>{editId ? "Edit Product" : "New Product"}</DialogTitle></DialogHeader>
             <div className="grid grid-cols-2 gap-3">
-              <div><Label className="text-xs">Invoice No.</Label><Input data-testid="invoice-number-input" value={form.invoice_number} onChange={(e) => setForm({ ...form, invoice_number: e.target.value })} className="bg-white" /></div>
-              <div>
-                <Label className="text-xs">Customer</Label>
-                <Select value={form.customer} onValueChange={(v) => setForm({ ...form, customer: v })}>
-                  <SelectTrigger data-testid="invoice-customer-select" className="bg-white"><SelectValue placeholder="Select customer" /></SelectTrigger>
-                  <SelectContent>
-                    {customers.length === 0 && <SelectItem value="none" disabled>Add customers first</SelectItem>}
-                    {customers.map((c) => <SelectItem key={c._id} value={c.name}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+              <div className="col-span-2">{F("name", "Description")}</div>
+              {F("sku", "Part Number")}
+              {F("stock", "Available Stock", "number")}
+              {F("unit_cost", "Unit Cost (AED)", "number")}
+              {F("weight", "Weight", "number")}
+              <div className="col-span-2">{F("low_stock_threshold", "Low Stock Alert Below", "number")}</div>
             </div>
-
-            <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground pt-2">Line Items</div>
-            <div className="space-y-2">
-              {items.map((it, i) => (
-                <div key={i} className="grid grid-cols-12 gap-2 items-center">
-                  <div className="col-span-5">
-                    <Select value={it.product_id} onValueChange={(v) => pickProduct(i, v)}>
-                      <SelectTrigger data-testid={`inv-item-product-${i}`} className="bg-white"><SelectValue placeholder="Select product" /></SelectTrigger>
-                      <SelectContent>
-                        {products.map((p) => <SelectItem key={p._id} value={p._id}>{p.name} ({money(p.stock)} in stock)</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Input placeholder="Qty" type="number" data-testid={`inv-item-qty-${i}`} value={it.qty} onChange={(e) => setItem(i, { qty: e.target.value })} className="col-span-3 bg-white" />
-                  <Input placeholder="Price" type="number" data-testid={`inv-item-price-${i}`} value={it.unit_price} onChange={(e) => setItem(i, { unit_price: e.target.value })} className="col-span-3 bg-white" />
-                  <button onClick={() => removeItem(i)} className="col-span-1 text-muted-foreground hover:text-destructive flex justify-center"><X size={16} /></button>
-                </div>
-              ))}
-              <Button variant="ghost" size="sm" onClick={addItem} data-testid="add-inv-item-btn" className="gap-1.5"><Plus size={14} /> Add item</Button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 items-end">
-              <div><Label className="text-xs">Tax %</Label><Input data-testid="invoice-tax-input" type="number" value={form.tax_percent} onChange={(e) => setForm({ ...form, tax_percent: e.target.value })} className="bg-white" /></div>
-              <div>
-                <Label className="text-xs">Status</Label>
-                <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-                  <SelectTrigger data-testid="invoice-status-select" className="bg-white"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="unpaid">Unpaid</SelectItem><SelectItem value="paid">Paid</SelectItem></SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="bg-muted/40 rounded-lg p-4 space-y-1.5 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="font-mono tabular">${money(subtotal)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Tax</span><span className="font-mono tabular">${money(tax)}</span></div>
-              <div className="flex justify-between font-medium pt-1 border-t border-border"><span>Total</span><span className="font-mono tabular">${money(total)}</span></div>
-            </div>
-
-            <DialogFooter><Button onClick={save} disabled={saving} data-testid="save-invoice-btn" className="rounded-full">{saving ? "Saving…" : editId ? "Update Invoice" : "Create Invoice"}</Button></DialogFooter>
+            <DialogFooter><Button onClick={save} data-testid="save-product-btn" className="rounded-full">Save</Button></DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <Dialog open={reorderOpen} onOpenChange={setReorderOpen}>
+          <DialogContent className="bg-white max-w-lg" data-testid="reorder-dialog">
+            <DialogHeader><DialogTitle style={{ fontFamily: "Manrope" }}>Reorder Low Stock</DialogTitle></DialogHeader>
+            <div>
+              <Label className="text-xs">Supplier</Label>
+              <Input data-testid="reorder-supplier-input" value={reorderSupplier} onChange={(e) => setReorderSupplier(e.target.value)} className="bg-white" />
+            </div>
+            <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground pt-1">Items to reorder</div>
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {lowItems.map((p) => (
+                <div key={p._id} className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">{p.name}</div>
+                    <div className="text-xs text-muted-foreground">In stock: {money(p.stock)} · Alert below {money(p.low_stock_threshold)}</div>
+                  </div>
+                  <Input type="number" data-testid={`reorder-qty-${p._id}`} value={reorderQty[p._id] ?? ""} onChange={(e) => setReorderQty({ ...reorderQty, [p._id]: e.target.value })} className="w-24 bg-white text-right" />
+                </div>
+              ))}
+            </div>
+            <DialogFooter><Button onClick={submitReorder} data-testid="submit-reorder-btn" className="rounded-full">Create Purchase Order</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+        </div>
       </div>
+
+      {lowItems.length > 0 && (
+        <div data-testid="low-stock-alert" className="flex items-center gap-3 px-5 py-4 rounded-xl border border-warning/40 bg-warning/5">
+          <WarningCircle size={22} weight="duotone" className="text-warning shrink-0" />
+          <p className="text-sm">
+            <span className="font-medium">{lowItems.length} product{lowItems.length > 1 ? "s" : ""}</span>
+            <span className="text-muted-foreground"> at or below the low-stock threshold. Use Reorder to restock in one click.</span>
+          </p>
+        </div>
+      )}
 
       <Card className="bg-white border-border/60 shadow-sm rounded-xl overflow-hidden">
         {rows.length === 0 ? (
-          <div className="py-20 flex flex-col items-center gap-3 text-muted-foreground"><Receipt size={40} weight="duotone" /><p className="text-sm">No invoices yet.</p></div>
+          <div className="py-20 flex flex-col items-center gap-3 text-muted-foreground">
+            <Cube size={40} weight="duotone" /><p className="text-sm">No products yet.</p>
+          </div>
         ) : (
+          <>
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border flex-wrap">
+            <div className="text-sm text-muted-foreground">
+              {selected.size > 0 ? (
+                <span className="flex items-center gap-3">
+                  <span>{selected.size} selected</span>
+                  <button onClick={bulkDelete} data-testid="bulk-delete-btn" className="text-destructive hover:underline flex items-center gap-1.5"><Trash size={15} /> Delete selected</button>
+                </span>
+              ) : `${rows.length} items`}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Per page</span>
+              <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
+                <SelectTrigger data-testid="page-size-select" className="bg-white h-8 w-20"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="30">30</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage(page - 1)} data-testid="prev-page">Prev</Button>
+              <span className="text-xs tabular font-mono">{page}/{totalPages}</span>
+              <Button size="sm" variant="ghost" disabled={page >= totalPages} onClick={() => setPage(page + 1)} data-testid="next-page">Next</Button>
+            </div>
+          </div>
           <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Invoice</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead className="w-10"><Checkbox checked={allOnPageSelected} onCheckedChange={toggleAll} data-testid="select-all" /></TableHead>
+                <TableHead>S.No</TableHead>
+                <TableHead>Part Number</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead className="text-right">Available Stock</TableHead>
+                <TableHead className="text-right">Unit Cost</TableHead>
+                <TableHead className="text-right">Weight</TableHead>
+                <TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((inv) => (
-                <TableRow key={inv._id} data-testid={`invoice-row-${inv._id}`}>
-                  <TableCell className="font-mono font-medium">{inv.invoice_number}</TableCell>
-                  <TableCell>{inv.customer}</TableCell>
-                  <TableCell className="text-muted-foreground">{fmtDate(inv.date)}</TableCell>
-                  <TableCell><Badge className={inv.status === "paid" ? "bg-success/15 text-success border-success/30" : "bg-warning/15 text-warning border-warning/30"} variant="outline">{inv.status}</Badge></TableCell>
-                  <TableCell className="text-right font-mono tabular">${money(inv.total)}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      <button onClick={() => toggleStatus(inv)} data-testid={`toggle-status-${inv._id}`}
-                        className={`flex items-center gap-1.5 text-sm ${inv.status === "paid" ? "text-muted-foreground hover:text-warning" : "text-success hover:underline"}`}>
-                        {inv.status === "paid" ? <><ArrowUUpLeft size={16} /> Unpay</> : <><CheckCircle size={16} weight="duotone" /> Mark Paid</>}
-                      </button>
-                      <button onClick={() => openEdit(inv)} data-testid={`edit-invoice-${inv._id}`} className="text-muted-foreground hover:text-primary"><PencilSimple size={16} /></button>
-                      <button onClick={() => printInvoice(inv)} data-testid={`pdf-invoice-${inv._id}`} className="text-primary hover:underline flex items-center gap-1.5 text-sm"><FilePdf size={16} weight="duotone" /> PDF</button>
-                      <button onClick={() => downloadExcel(inv)} data-testid={`excel-invoice-${inv._id}`} className="text-success hover:underline flex items-center gap-1.5 text-sm"><FileXls size={16} weight="duotone" /> Excel</button>
-                      <button onClick={() => remove(inv._id)} title="Void (restores stock)" data-testid={`del-invoice-${inv._id}`} className="text-muted-foreground hover:text-destructive"><Trash size={16} /></button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {pageRows.map((p, i) => {
+                const low = p.stock <= (p.low_stock_threshold || 0);
+                return (
+                  <TableRow key={p._id} data-testid={`product-row-${p._id}`}>
+                    <TableCell><Checkbox checked={selected.has(p._id)} onCheckedChange={() => toggleOne(p._id)} data-testid={`select-${p._id}`} /></TableCell>
+                    <TableCell className="text-muted-foreground tabular">{(page - 1) * pageSize + i + 1}</TableCell>
+                    <TableCell className="font-mono">{p.sku || "—"}</TableCell>
+                    <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell className="text-right">
+                      <span className={`font-mono tabular inline-flex items-center gap-1.5 ${low ? "text-destructive" : ""}`}>
+                        {low && <WarningCircle size={15} weight="fill" />}{money(p.stock)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular text-muted-foreground">${money(p.unit_cost)}</TableCell>
+                    <TableCell className="text-right font-mono tabular text-muted-foreground">{p.weight != null && p.weight !== "" ? money(p.weight) : "—"}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => openEdit(p)} data-testid={`edit-product-${p._id}`} className="text-muted-foreground hover:text-primary"><PencilSimple size={16} /></button>
+                        <button onClick={() => remove(p._id)} data-testid={`del-product-${p._id}`} className="text-muted-foreground hover:text-destructive"><Trash size={16} /></button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
           </div>
+          </>
         )}
       </Card>
     </div>
