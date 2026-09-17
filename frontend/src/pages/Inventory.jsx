@@ -10,14 +10,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Cube, Trash, PencilSimple, WarningCircle, ShoppingCart, UploadSimple, Database } from "@phosphor-icons/react";
+import { Plus, Cube, Trash, PencilSimple, WarningCircle, ShoppingCart, UploadSimple, Database, FileXls } from "@phosphor-icons/react";
 import { toast } from "sonner";
+import { useConfirmDelete } from "@/hooks/useConfirmDelete";
+import { RefreshButton } from "@/components/RefreshButton";
 
-const empty = { name: "", sku: "", stock: "", unit_cost: "", unit_price: "", low_stock_threshold: "5" };
+const empty = { name: "", sku: "", stock: "", unit_cost: "", weight: "", low_stock_threshold: "5" };
 const num = (v) => parseFloat(v || 0) || 0;
 
 export default function Inventory() {
   const navigate = useNavigate();
+  const { requestDelete, ConfirmDeleteDialog } = useConfirmDelete();
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
@@ -88,13 +91,13 @@ export default function Inventory() {
 
   const openNew = () => { setForm(empty); setEditId(null); setOpen(true); };
   const openEdit = (p) => {
-    setForm({ name: p.name, sku: p.sku, stock: p.stock, unit_cost: p.unit_cost, unit_price: p.unit_price, low_stock_threshold: p.low_stock_threshold });
+    setForm({ name: p.name, sku: p.sku, stock: p.stock, unit_cost: p.unit_cost, weight: p.weight, low_stock_threshold: p.low_stock_threshold });
     setEditId(p._id); setOpen(true);
   };
 
   const save = async () => {
     if (!form.name) { toast.error("Name is required"); return; }
-    const payload = { name: form.name, sku: form.sku, stock: num(form.stock), unit_cost: num(form.unit_cost), unit_price: num(form.unit_price), low_stock_threshold: num(form.low_stock_threshold) };
+    const payload = { name: form.name, sku: form.sku, stock: num(form.stock), unit_cost: num(form.unit_cost), weight: form.weight === "" ? null : num(form.weight), low_stock_threshold: num(form.low_stock_threshold) };
     if (editId) await api.put(`/products/${editId}`, payload);
     else await api.post("/products", payload);
     toast.success(editId ? "Product updated" : "Product added");
@@ -119,8 +122,12 @@ export default function Inventory() {
           <h1 className="text-5xl tracking-tight font-bold mt-1" style={{ fontFamily: "Manrope" }}>Inventory</h1>
         </div>
         <div className="flex items-center gap-2">
+        <RefreshButton onRefresh={load} testid="inventory-refresh-btn" iconOnly />
         <Button variant="secondary" onClick={() => navigate("/inventory/import")} data-testid="import-products-nav-btn" className="rounded-full gap-2">
           <Database size={18} weight="duotone" /> Import Products
+        </Button>
+        <Button variant="secondary" onClick={() => navigate("/inventory/supplier-stock-import")} data-testid="import-supplier-stock-nav-btn" className="rounded-full gap-2">
+          <FileXls size={18} weight="duotone" /> Import Supplier Stock
         </Button>
         <input ref={uploadRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" data-testid="product-upload-input" onChange={(e) => doUpload(e.target.files[0])} />
         <Button variant="secondary" onClick={() => uploadRef.current?.click()} data-testid="upload-products-btn" className="rounded-full gap-2">
@@ -138,11 +145,11 @@ export default function Inventory() {
           <DialogContent className="bg-white">
             <DialogHeader><DialogTitle style={{ fontFamily: "Manrope" }}>{editId ? "Edit Product" : "New Product"}</DialogTitle></DialogHeader>
             <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">{F("name", "Product Name")}</div>
-              {F("sku", "SKU")}
-              {F("stock", "Stock Qty", "number")}
-              {F("unit_cost", "Unit Cost", "number")}
-              {F("unit_price", "Unit Price", "number")}
+              <div className="col-span-2">{F("name", "Description")}</div>
+              {F("sku", "Part Number")}
+              {F("stock", "Available Stock", "number")}
+              {F("unit_cost", "Unit Cost (AED)", "number")}
+              {F("weight", "Weight", "number")}
               <div className="col-span-2">{F("low_stock_threshold", "Low Stock Alert Below", "number")}</div>
             </div>
             <DialogFooter><Button onClick={save} data-testid="save-product-btn" className="rounded-full">Save</Button></DialogFooter>
@@ -196,7 +203,7 @@ export default function Inventory() {
               {selected.size > 0 ? (
                 <span className="flex items-center gap-3">
                   <span>{selected.size} selected</span>
-                  <button onClick={bulkDelete} data-testid="bulk-delete-btn" className="text-destructive hover:underline flex items-center gap-1.5"><Trash size={15} /> Delete selected</button>
+                  <button onClick={() => requestDelete(`${selected.size} selected item(s)`, bulkDelete)} data-testid="bulk-delete-btn" className="text-destructive hover:underline flex items-center gap-1.5"><Trash size={15} /> Delete selected</button>
                 </span>
               ) : `${rows.length} items`}
             </div>
@@ -225,7 +232,6 @@ export default function Inventory() {
                 <TableHead>Description</TableHead>
                 <TableHead className="text-right">Available Stock</TableHead>
                 <TableHead className="text-right">Unit Cost</TableHead>
-                <TableHead className="text-right">Selling Price</TableHead>
                 <TableHead className="text-right">Weight</TableHead>
                 <TableHead></TableHead>
               </TableRow>
@@ -245,12 +251,11 @@ export default function Inventory() {
                       </span>
                     </TableCell>
                     <TableCell className="text-right font-mono tabular text-muted-foreground">${money(p.unit_cost)}</TableCell>
-                    <TableCell className="text-right font-mono tabular">${money(p.unit_price)}</TableCell>
                     <TableCell className="text-right font-mono tabular text-muted-foreground">{p.weight != null && p.weight !== "" ? money(p.weight) : "—"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={() => openEdit(p)} data-testid={`edit-product-${p._id}`} className="text-muted-foreground hover:text-primary"><PencilSimple size={16} /></button>
-                        <button onClick={() => remove(p._id)} data-testid={`del-product-${p._id}`} className="text-muted-foreground hover:text-destructive"><Trash size={16} /></button>
+                        <button onClick={() => requestDelete(p.name, () => remove(p._id))} data-testid={`del-product-${p._id}`} className="text-muted-foreground hover:text-destructive"><Trash size={16} /></button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -262,6 +267,7 @@ export default function Inventory() {
           </>
         )}
       </Card>
+      <ConfirmDeleteDialog />
     </div>
   );
 }
