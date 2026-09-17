@@ -18,10 +18,15 @@ Design constraints this satisfies:
   without requiring the import file to carry a brand column.
 - Invalid rows are collected with a reason and skipped; they never
   abort the rest of the import.
-- unit_cost (mapped from "Net Price") is the same field every other
+- unit_cost (mapped from "Unit Cost") is the same field every other
   part of the app already treats as cost-basis-only — the customer
   portal's own price computation (unit_cost * customer margin) is
   untouched by this import, so cost still never reaches a customer.
+- Part Number is always kept as a plain string (never parsed as a
+  number) so leading zeros, letters, and hyphens survive intact; the
+  only check applied to it is "non-empty after stripping whitespace".
+- Weight is optional: a blank cell is stored as null rather than being
+  coerced to 0, since unlike cost/qty there's no meaningful zero default.
 """
 import csv
 import io
@@ -43,15 +48,16 @@ CHUNK_SIZE = 1000  # rows per Supabase upsert call and per existing-lookup call
 PREVIEW_ROWS = 50
 MAX_ERROR_ROWS_KEPT = 5000  # cap the in-memory/CSV error list even if far more rows are bad
 
-# Header aliases accepted case/spacing-insensitively, including the
-# source file's own "Availabe Qty" typo.
+# Header aliases accepted case/spacing-insensitively. Expected columns:
+# S.No, Part Number, Description, Available Stock, Unit Cost, Weight.
+# ("S.No" isn't mapped — it's a row label, not stored data — so it's
+# simply ignored like any other unrecognized header.)
 COLUMN_ALIASES = {
     "part number": "part_number", "part no": "part_number", "partno": "part_number",
     "description": "description",
-    "required qty": "required_qty",
-    "available qty": "available_qty", "availabe qty": "available_qty", "avail qty": "available_qty",
-    "net price": "net_price", "netprice": "net_price", "unit cost": "net_price",
-    "total": "total",
+    "available stock": "available_qty", "available qty": "available_qty", "availabe qty": "available_qty", "avail qty": "available_qty",
+    "unit cost": "net_price", "net price": "net_price", "netprice": "net_price",
+    "weight": "weight",
 }
 REQUIRED_MAPPED_COLUMNS = {"part_number"}
 
@@ -131,10 +137,9 @@ def _iter_mapped_rows(path: Path):
             yield row_no, {
                 "part_number": get("part_number"),
                 "description": get("description"),
-                "required_qty": get("required_qty"),
                 "available_qty": get("available_qty"),
                 "net_price": get("net_price"),
-                "total": get("total"),
+                "weight": get("weight"),
             }, [str(h) for h in header]
     finally:
         wb.close()
@@ -181,12 +186,14 @@ def validate_import(import_id: str) -> dict:
         if not pn:
             _fail(errors, row_no, "Missing Part Number")
             continue
-        price = _parse_number(mapped["net_price"], "Net Price", row_no, errors)
-        avail = _parse_number(mapped["available_qty"], "Available Qty", row_no, errors)
-        _parse_number(mapped["required_qty"], "Required Qty", row_no, errors)  # validated, not stored
+        price = _parse_number(mapped["net_price"], "Unit Cost", row_no, errors)
+        avail = _parse_number(mapped["available_qty"], "Available Stock", row_no, errors)
+        weight = _parse_number(mapped["weight"], "Weight", row_no, errors)
         if price is None and mapped["net_price"] not in (None, ""):
             continue  # was invalid, already recorded
         if avail is None and mapped["available_qty"] not in (None, ""):
+            continue
+        if weight is None and mapped["weight"] not in (None, ""):
             continue
 
         if pn in seen_part_numbers:
@@ -196,7 +203,7 @@ def validate_import(import_id: str) -> dict:
         if len(preview) < PREVIEW_ROWS:
             preview.append({
                 "row": row_no, "part_number": pn, "description": str(mapped["description"] or "").strip(),
-                "required_qty": mapped["required_qty"], "available_qty": avail, "net_price": price,
+                "available_qty": avail, "net_price": price, "weight": weight,
             })
 
     _write_errors_csv(import_id, errors)
@@ -236,17 +243,21 @@ def run_import(sb, import_id: str) -> dict:
         if not pn:
             _fail(errors, row_no, "Missing Part Number")
             continue
-        price = _parse_number(mapped["net_price"], "Net Price", row_no, errors)
+        price = _parse_number(mapped["net_price"], "Unit Cost", row_no, errors)
         if mapped["net_price"] not in (None, "") and price is None:
             continue
-        avail = _parse_number(mapped["available_qty"], "Available Qty", row_no, errors)
+        avail = _parse_number(mapped["available_qty"], "Available Stock", row_no, errors)
         if mapped["available_qty"] not in (None, "") and avail is None:
+            continue
+        weight = _parse_number(mapped["weight"], "Weight", row_no, errors)
+        if mapped["weight"] not in (None, "") and weight is None:
             continue
         by_part_number[pn] = {
             "part_number": pn,
             "description": str(mapped["description"] or "").strip(),
             "unit_cost": price if price is not None else 0,
             "available_qty": avail if avail is not None else 0,
+            "weight": weight,  # blank Weight is stored as null, not coerced to 0
         }
 
     part_numbers = list(by_part_number.keys())
@@ -273,6 +284,7 @@ def run_import(sb, import_id: str) -> dict:
             "brand": existing_brand.get(pn, ""),
             "description": r["description"],
             "unit_cost": r["unit_cost"],
+            "weight": r["weight"],
             "updated_at": now,
         })
 

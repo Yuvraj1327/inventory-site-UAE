@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Cube, Trash, PencilSimple, WarningCircle, ShoppingCart, UploadSimple, Database, FileXls } from "@phosphor-icons/react";
+import { Plus, Cube, Trash, PencilSimple, WarningCircle, ShoppingCart, UploadSimple, Database } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
 const empty = { name: "", sku: "", stock: "", unit_cost: "", unit_price: "", low_stock_threshold: "5" };
@@ -122,9 +122,6 @@ export default function Inventory() {
         <Button variant="secondary" onClick={() => navigate("/inventory/import")} data-testid="import-products-nav-btn" className="rounded-full gap-2">
           <Database size={18} weight="duotone" /> Import Products
         </Button>
-        <Button variant="secondary" onClick={() => navigate("/inventory/supplier-stock-import")} data-testid="import-supplier-stock-nav-btn" className="rounded-full gap-2">
-          <FileXls size={18} weight="duotone" /> Import Supplier Stock
-        </Button>
         <input ref={uploadRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" data-testid="product-upload-input" onChange={(e) => doUpload(e.target.files[0])} />
         <Button variant="secondary" onClick={() => uploadRef.current?.click()} data-testid="upload-products-btn" className="rounded-full gap-2">
           <UploadSimple size={18} weight="duotone" /> Upload CSV
@@ -229,14 +226,13 @@ export default function Inventory() {
                 <TableHead className="text-right">Available Stock</TableHead>
                 <TableHead className="text-right">Unit Cost</TableHead>
                 <TableHead className="text-right">Selling Price</TableHead>
-                <TableHead className="text-right">GP</TableHead>
+                <TableHead className="text-right">Weight</TableHead>
                 <TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {pageRows.map((p, i) => {
                 const low = p.stock <= (p.low_stock_threshold || 0);
-                const gp = (p.unit_price || 0) - (p.unit_cost || 0);
                 return (
                   <TableRow key={p._id} data-testid={`product-row-${p._id}`}>
                     <TableCell><Checkbox checked={selected.has(p._id)} onCheckedChange={() => toggleOne(p._id)} data-testid={`select-${p._id}`} /></TableCell>
@@ -250,7 +246,7 @@ export default function Inventory() {
                     </TableCell>
                     <TableCell className="text-right font-mono tabular text-muted-foreground">${money(p.unit_cost)}</TableCell>
                     <TableCell className="text-right font-mono tabular">${money(p.unit_price)}</TableCell>
-                    <TableCell className={`text-right font-mono tabular ${gp >= 0 ? "text-success" : "text-destructive"}`}>${money(gp)}</TableCell>
+                    <TableCell className="text-right font-mono tabular text-muted-foreground">{p.weight != null && p.weight !== "" ? money(p.weight) : "—"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={() => openEdit(p)} data-testid={`edit-product-${p._id}`} className="text-muted-foreground hover:text-primary"><PencilSimple size={16} /></button>

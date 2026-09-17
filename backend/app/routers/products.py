@@ -31,6 +31,7 @@ def _to_legacy(product: dict, inv: dict | None) -> dict:
         "name": product.get("description", ""), "sku": product.get("part_number", ""),
         "stock": (inv or {}).get("available_qty", 0),
         "unit_cost": product.get("unit_cost", 0), "unit_price": product.get("default_selling_price", 0),
+        "weight": product.get("weight"),
         "low_stock_threshold": product.get("low_stock_threshold", 5),
         "pc": product.get("pc", ""), "superseded": product.get("superseded_reference", ""),
         "superseded_from": product.get("superseded_from", ""), "model": product.get("model", ""),

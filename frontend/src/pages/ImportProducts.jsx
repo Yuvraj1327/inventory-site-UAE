@@ -91,7 +91,7 @@ export default function ImportProducts() {
             <div>
               <h2 className="font-bold" style={{ fontFamily: "Manrope" }}>Upload a product spreadsheet</h2>
               <p className="text-sm text-muted-foreground mt-1">
-                Expected columns: <span className="font-mono text-xs">Part Number</span>, <span className="font-mono text-xs">Description</span>, <span className="font-mono text-xs">Required Qty</span>, <span className="font-mono text-xs">Available Qty</span>, <span className="font-mono text-xs">Net Price</span>. Handles 100,000+ rows.
+                Expected columns: <span className="font-mono text-xs">S.No</span>, <span className="font-mono text-xs">Part Number</span>, <span className="font-mono text-xs">Description</span>, <span className="font-mono text-xs">Available Stock</span>, <span className="font-mono text-xs">Unit Cost</span>, <span className="font-mono text-xs">Weight</span>. Handles 100,000+ rows.
               </p>
             </div>
             <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" data-testid="import-file-input"
@@ -129,7 +129,7 @@ export default function ImportProducts() {
               <Table>
                 <TableHeader><TableRow>
                   <TableHead>Row</TableHead><TableHead>Part Number</TableHead><TableHead>Description</TableHead>
-                  <TableHead className="text-right">Required Qty</TableHead><TableHead className="text-right">Available Qty</TableHead><TableHead className="text-right">Net Price</TableHead>
+                  <TableHead className="text-right">Available Stock</TableHead><TableHead className="text-right">Unit Cost</TableHead><TableHead className="text-right">Weight</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {preview.preview.map((r) => (
@@ -137,9 +137,9 @@ export default function ImportProducts() {
                       <TableCell className="text-muted-foreground text-xs">{r.row}</TableCell>
                       <TableCell className="font-mono text-xs">{r.part_number}</TableCell>
                       <TableCell className="text-xs">{r.description || "—"}</TableCell>
-                      <TableCell className="text-right text-xs">{r.required_qty ?? "—"}</TableCell>
                       <TableCell className="text-right text-xs">{r.available_qty ?? "—"}</TableCell>
                       <TableCell className="text-right font-mono tabular text-xs">{r.net_price != null ? `$${money(r.net_price)}` : "—"}</TableCell>
+                      <TableCell className="text-right text-xs">{r.weight ?? "—"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
