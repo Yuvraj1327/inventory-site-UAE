@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { api, money, formatApiError } from "@/lib/api";
+import { downloadOrderXlsxTemplate } from "@/lib/xlsxTemplate";
 import PortalLayout from "@/components/PortalLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  MagnifyingGlass, Package, Trash, UploadSimple, CheckCircle, Warning, ArrowLeft, XCircle,
+  MagnifyingGlass, Package, Trash, UploadSimple, CheckCircle, Warning, ArrowLeft, XCircle, DownloadSimple,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -290,11 +291,16 @@ function XlsxUploadPanel({ onMatched, onRejected }) {
           <h3 className="text-base font-bold" style={{ fontFamily: "Manrope" }}>Bulk order from spreadsheet</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Columns: Sl No, Part Number, Quantity, Requested Price (optional)</p>
         </div>
-        <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" data-testid="xlsx-file-input"
-          onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
-        <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={status === "parsing" || status === "validating"} className="gap-1.5 shrink-0">
-          <UploadSimple size={15} /> Choose file
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" data-testid="xlsx-file-input"
+            onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+          <Button variant="ghost" onClick={() => downloadOrderXlsxTemplate()} data-testid="download-order-template-btn" className="gap-1.5">
+            <DownloadSimple size={15} /> Download Template
+          </Button>
+          <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={status === "parsing" || status === "validating"} className="gap-1.5">
+            <UploadSimple size={15} /> Choose file
+          </Button>
+        </div>
       </div>
 
       {status === "validating" && (

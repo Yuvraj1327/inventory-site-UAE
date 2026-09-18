@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, money, formatApiError } from "@/lib/api";
+import { downloadPartsXlsxTemplate } from "@/lib/xlsxTemplate";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -96,9 +97,14 @@ export default function ImportProducts() {
             </div>
             <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" data-testid="import-file-input"
               onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
-            <Button onClick={() => fileRef.current?.click()} disabled={uploading} data-testid="import-choose-file-btn" className="gap-2">
-              <UploadSimple size={16} /> {uploading ? `Validating ${fileName}…` : "Choose file"}
-            </Button>
+            <div className="flex items-center justify-center gap-2.5">
+              <Button onClick={() => fileRef.current?.click()} disabled={uploading} data-testid="import-choose-file-btn" className="gap-2">
+                <UploadSimple size={16} /> {uploading ? `Validating ${fileName}…` : "Choose file"}
+              </Button>
+              <Button variant="outline" onClick={() => downloadPartsXlsxTemplate()} data-testid="download-template-btn" className="gap-2">
+                <DownloadSimple size={16} /> Download Template
+              </Button>
+            </div>
             {uploading && <p className="text-xs text-muted-foreground">Large files may take a few seconds to validate — this runs entirely on the server.</p>}
           </div>
         </Card>
