@@ -229,7 +229,7 @@ export default function Inventory() {
                 <TableHead>Part Number</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead className="text-right">Available Stock</TableHead>
-                <TableHead className="text-right">Unit Cost</TableHead>
+                <TableHead className="text-right">Unit Cost (AED)</TableHead>
                 <TableHead className="text-right">Weight</TableHead>
                 <TableHead></TableHead>
               </TableRow>
@@ -248,7 +248,7 @@ export default function Inventory() {
                         {low && <WarningCircle size={15} weight="fill" />}{money(p.stock)}
                       </span>
                     </TableCell>
-                    <TableCell className="text-right font-mono tabular text-muted-foreground">${money(p.unit_cost)}</TableCell>
+                    <TableCell className="text-right font-mono tabular text-muted-foreground">AED {money(p.unit_cost)}</TableCell>
                     <TableCell className="text-right font-mono tabular text-muted-foreground">{p.weight != null && p.weight !== "" ? money(p.weight) : "—"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
